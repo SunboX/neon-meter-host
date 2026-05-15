@@ -118,6 +118,60 @@ test('AppController skips remembered BLE auto-connect when disabled', async () =
     controller.dispose()
 })
 
+test('AppController retries remembered BLE startup auto-connect when unavailable', async () => {
+    const state = new AppState()
+    const view = new FakeView()
+    const bridge = new FakeBridge({
+        loadSettings: {
+            autoSync: false,
+            rememberedBleDeviceId: 'device-5',
+            rememberedBleDeviceName: 'AI Meter Shelf'
+        }
+    })
+    const bleClient = new FakeBleClient({
+        rememberedDevices: [
+            null,
+            {
+                id: 'device-5',
+                name: 'AI Meter Shelf',
+                connected: true
+            }
+        ]
+    })
+    const timers = new FakeTimers()
+    const controller = new AppController({
+        state,
+        view,
+        bridge,
+        bleClient,
+        timers
+    })
+
+    await controller.init()
+    await flushMicrotasks()
+
+    assert.equal(state.getSnapshot().ble.connected, false)
+    assert.equal(timers.pendingCount, 1)
+
+    await timers.runNext()
+
+    assert.deepEqual(bleClient.rememberedConnectRequests, [
+        {
+            id: 'device-5',
+            name: 'AI Meter Shelf'
+        },
+        {
+            id: 'device-5',
+            name: 'AI Meter Shelf'
+        }
+    ])
+    assert.equal(state.getSnapshot().ble.connected, true)
+    assert.equal(state.getSnapshot().ble.deviceName, 'AI Meter Shelf')
+    assert.equal(timers.pendingCount, 0)
+
+    controller.dispose()
+})
+
 test('AppController reconnects a remembered BLE device after connection loss', async () => {
     const state = new AppState()
     const view = new FakeView()

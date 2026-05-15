@@ -239,10 +239,7 @@ export class AppController {
             const device =
                 await this.#bleClient.connectRemembered(rememberedDevice)
             if (!device?.connected) {
-                this.#state.setValue('sync', {
-                    status: snapshot.sync.status,
-                    error: ''
-                })
+                this.#scheduleBleReconnect()
                 return
             }
             this.#state.setValue('ble', {
@@ -256,6 +253,7 @@ export class AppController {
                 status: 'BLE auto-connect failed',
                 error: errorMessage(error)
             })
+            this.#scheduleBleReconnect()
         }
     }
 

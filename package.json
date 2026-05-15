@@ -1,6 +1,6 @@
 {
     "name": "neon-meter-host",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "productName": "Neon Meter",
     "description": "Electron host daemon for syncing AI usage to the AI Meter CoreS3 over BLE.",
     "license": "AGPL-3.0-or-later",
