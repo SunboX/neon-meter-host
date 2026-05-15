@@ -129,4 +129,4 @@ jobs:
               if: steps.release.outputs.tag != ''
               env:
                   GH_TOKEN: ${{ github.token }}
-              run: gh release upload "${{ steps.release.outputs.tag }}" dist/* --clobber
+              run: gh release upload "${{ steps.release.outputs.tag }}" dist/* --repo "${GITHUB_REPOSITORY}" --clobber
