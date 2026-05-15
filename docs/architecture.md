@@ -1,5 +1,17 @@
 # Architecture
 
+## Repository Layout
+
+- `src/electron/`: Neon Meter app and preload bridge.
+- `src/ble/`: Web Bluetooth client.
+- `src/core/`: state and firmware payload mapping.
+- `src/providers/`: Claude Code and ChatGPT/Codex provider adapters.
+- `src/ui/`: DOM rendering.
+- `docs/`: operating notes and technical reference.
+- `specs/`: host daemon product spec.
+- `spec/`: scaffold compatibility spec.
+- `tests/`: Node test suite.
+
 ## Processes
 
 - Neon Meter app: owns app lifecycle, tray, settings persistence,

@@ -34,9 +34,11 @@ const credentialResolver = createProviderCredentialResolver()
 
 /**
  * Creates the main Electron window.
+ * @param {{ startHidden?: boolean }} [options]
  * @returns {BrowserWindow}
  */
-function createWindow() {
+function createWindow(options = {}) {
+    const startHidden = Boolean(options.startHidden)
     const window = new BrowserWindow({
         width: 1040,
         height: 760,
@@ -56,7 +58,15 @@ function createWindow() {
     })
 
     window.loadFile(path.join(projectRoot, 'src', 'index.html'))
-    window.once('ready-to-show', () => window.show())
+    window.once('ready-to-show', () => {
+        if (startHidden) {
+            hideMainWindow()
+            return
+        }
+        showMainWindow()
+    })
+    window.on('show', () => updateTrayMenu())
+    window.on('hide', () => updateTrayMenu())
     return window
 }
 
@@ -65,13 +75,30 @@ function createWindow() {
  * @returns {void}
  */
 function createTray() {
-    tray = new Tray(
-        nativeImage.createFromPath(getIconPath('neon-meter-tray.png'))
-    )
+    const trayIcon = createTrayIcon()
+
+    tray = new Tray(trayIcon)
     tray.setToolTip(APP_NAME)
+    updateTrayMenu()
+}
+
+/**
+ * Rebuilds the tray menu for the current window visibility.
+ * @returns {void}
+ */
+function updateTrayMenu() {
+    if (!tray) return
     tray.setContextMenu(
         Menu.buildFromTemplate([
-            { label: 'Show Neon Meter', click: () => mainWindow?.show() },
+            {
+                label: mainWindow?.isVisible()
+                    ? 'Hide Neon Meter'
+                    : 'Show Neon Meter',
+                click: () =>
+                    mainWindow?.isVisible()
+                        ? hideMainWindow()
+                        : showMainWindow()
+            },
             {
                 label: 'Quit',
                 click: () => {
@@ -80,6 +107,54 @@ function createTray() {
             }
         ])
     )
+}
+
+/**
+ * Shows the main window and restores the macOS Dock icon.
+ * @returns {void}
+ */
+function showMainWindow() {
+    if (!mainWindow) {
+        mainWindow = createWindow()
+    }
+    if (app.dock) {
+        app.dock.show()
+    }
+    mainWindow.show()
+    mainWindow.focus()
+    updateTrayMenu()
+}
+
+/**
+ * Hides the main window and removes the macOS Dock icon.
+ * @returns {void}
+ */
+function hideMainWindow() {
+    mainWindow?.hide()
+    if (app.dock) {
+        app.dock.hide()
+    }
+    updateTrayMenu()
+}
+
+/**
+ * Creates the tray icon, using a macOS template image for menu bar contrast.
+ * @returns {Electron.NativeImage}
+ */
+function createTrayIcon() {
+    const trayIcon = nativeImage.createFromPath(
+        getIconPath(
+            process.platform === 'darwin'
+                ? 'neon-meter-tray-template.png'
+                : 'neon-meter-tray.png'
+        )
+    )
+
+    if (process.platform === 'darwin') {
+        trayIcon.setTemplateImage(true)
+    }
+
+    return trayIcon
 }
 
 /**
@@ -216,13 +291,20 @@ async function writeSettings(settings) {
 
 /**
  * Applies persisted launch-at-login state on app startup.
+ * @param {object | null} [settings]
  * @returns {Promise<void>}
  */
-async function applyPersistedAutostart() {
+async function applyPersistedAutostart(settings = null) {
     try {
-        const settings = await readSettings()
-        if (typeof settings.startAtLogin !== 'boolean') return
-        await setAutostartEnabled(settings.startAtLogin, getAutostartOptions())
+        const safeSettings =
+            settings && typeof settings === 'object'
+                ? settings
+                : await readSettings()
+        if (typeof safeSettings.startAtLogin !== 'boolean') return
+        await setAutostartEnabled(
+            safeSettings.startAtLogin,
+            getAutostartOptions()
+        )
     } catch (error) {
         console.warn('Autostart setup failed:', error)
     }
@@ -244,23 +326,29 @@ function getAutostartOptions() {
 registerIpc()
 
 app.whenReady()
-    .then(() => {
+    .then(async () => {
         installBluetoothHandlers()
-        return applyPersistedAutostart()
+        const settings = await readSettings()
+        await applyPersistedAutostart(settings)
+        return settings
     })
-    .then(() => {
+    .then((settings) => {
         if (app.dock) {
             app.dock.setIcon(
                 nativeImage.createFromPath(getIconPath('neon-meter-icon.png'))
             )
+            if (settings.startHidden === true) {
+                app.dock.hide()
+            }
         }
-        mainWindow = createWindow()
+        mainWindow = createWindow({
+            startHidden: settings.startHidden === true
+        })
         createTray()
     })
 
 app.on('activate', () => {
-    if (!mainWindow) mainWindow = createWindow()
-    mainWindow.show()
+    showMainWindow()
 })
 
 app.on('window-all-closed', () => {

@@ -13,6 +13,7 @@ test('normalizePersistedSettings marks an empty store as first run', () => {
     assert.equal(result.locale, 'en')
     assert.equal(result.settings.autoSync, true)
     assert.equal(result.settings.startAtLogin, false)
+    assert.equal(result.settings.startHidden, false)
     assert.equal(result.settings.autoConnectBle, true)
     assert.equal(result.settings.rotationSeconds, 30)
 })
@@ -22,6 +23,7 @@ test('normalizePersistedSettings restores locale and daemon settings', () => {
         locale: 'de',
         autoSync: false,
         startAtLogin: true,
+        startHidden: true,
         autoConnectBle: false,
         syncIntervalMinutes: 12,
         rotationSeconds: 45,
@@ -34,6 +36,7 @@ test('normalizePersistedSettings restores locale and daemon settings', () => {
     assert.equal(result.locale, 'de')
     assert.equal(result.settings.autoSync, false)
     assert.equal(result.settings.startAtLogin, true)
+    assert.equal(result.settings.startHidden, true)
     assert.equal(result.settings.autoConnectBle, false)
     assert.equal(result.settings.syncIntervalMinutes, 12)
     assert.equal(result.settings.rotationSeconds, 45)
@@ -47,6 +50,7 @@ test('createPersistedSettings stores only daemon settings', () => {
         settings: {
             autoSync: false,
             startAtLogin: true,
+            startHidden: true,
             autoConnectBle: false,
             syncIntervalMinutes: 20,
             rotationSeconds: 60,
@@ -62,6 +66,7 @@ test('createPersistedSettings stores only daemon settings', () => {
     assert.equal(persisted.locale, 'de')
     assert.equal(persisted.autoSync, false)
     assert.equal(persisted.startAtLogin, true)
+    assert.equal(persisted.startHidden, true)
     assert.equal(persisted.autoConnectBle, false)
     assert.equal(persisted.syncIntervalMinutes, 20)
     assert.equal(persisted.rotationSeconds, 60)

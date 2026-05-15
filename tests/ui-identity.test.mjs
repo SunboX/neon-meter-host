@@ -66,6 +66,7 @@ test('project includes runtime icon assets', async () => {
     assert.equal(await exists('src/assets/neon-meter-icon.svg'), true)
     assert.equal(await exists('src/assets/neon-meter-icon.png'), true)
     assert.equal(await exists('src/assets/neon-meter-tray.png'), true)
+    assert.equal(await exists('src/assets/neon-meter-tray-template.png'), true)
     assert.equal(await exists('src/assets/neon-meter-icon.icns'), true)
 })
 
@@ -76,11 +77,16 @@ test('runtime icon png uses transparent corners without white matte', async () =
     const tray = decodePng(
         await readFile(new URL('src/assets/neon-meter-tray.png', root))
     )
+    const trayTemplate = decodePng(
+        await readFile(new URL('src/assets/neon-meter-tray-template.png', root))
+    )
 
     assert.equal(icon.width, 512)
     assert.equal(icon.height, 512)
     assert.equal(tray.width, 32)
     assert.equal(tray.height, 32)
+    assert.equal(trayTemplate.width, 32)
+    assert.equal(trayTemplate.height, 32)
     assert.equal(pixel(icon, 0, 0).a, 0)
     assert.equal(pixel(icon, icon.width - 1, 0).a, 0)
     assert.equal(pixel(icon, 0, icon.height - 1).a, 0)
@@ -88,6 +94,12 @@ test('runtime icon png uses transparent corners without white matte', async () =
     assert.ok(pixel(icon, 256, 256).a > 240)
     assert.equal(pixel(tray, 0, 0).a, 0)
     assert.ok(pixel(tray, 16, 16).a > 220)
+    assert.equal(pixel(trayTemplate, 0, 0).a, 0)
+    assert.equal(pixel(trayTemplate, 2, 16).a, 0)
+    assert.equal(pixel(trayTemplate, 16, 29).a, 0)
+    assert.ok(pixel(trayTemplate, 12, 22).a > 160)
+    assert.ok(pixel(trayTemplate, 16, 16).a > 160)
+    assert.ok(pixel(trayTemplate, 20, 9).a > 160)
 })
 
 test('electron runtime uses Neon Meter name and icon assets', async () => {
@@ -100,10 +112,10 @@ test('electron runtime uses Neon Meter name and icon assets', async () => {
     assert.match(main, /backgroundColor:\s*'#050914'/)
     assert.match(main, /icon: getIconPath\('neon-meter-icon\.png'\)/)
     assert.match(main, /app\.dock\.setIcon/)
-    assert.match(
-        main,
-        /new Tray\(\s*nativeImage\.createFromPath\(getIconPath\('neon-meter-tray\.png'\)\)\s*\)/
-    )
+    assert.match(main, /function createTrayIcon/)
+    assert.match(main, /neon-meter-tray-template\.png/)
+    assert.match(main, /trayIcon\.setTemplateImage\(true\)/)
+    assert.match(main, /new Tray\(trayIcon\)/)
     assert.match(main, /tray\.setToolTip\(APP_NAME\)/)
     assert.match(main, /Show Neon Meter/)
 })
@@ -189,12 +201,16 @@ test('settings are edited through a persistent settings dialog', async () => {
     assert.match(html, /id="settingsButton"/)
     assert.match(html, /id="settingsSaveButton"/)
     assert.match(html, /id="rotationSecondsInput"/)
+    assert.match(html, /id="startHiddenInput"/)
+    assert.match(html, /Start hidden by default/)
     assert.match(html, /Auto-detect/)
     assert.doesNotMatch(html, /id="providerSelect"/)
     assert.doesNotMatch(html, /OpenAI Admin Key/)
     assert.doesNotMatch(html, /manual estimate/)
     assert.match(view, /openSettingsDialog\(\)/)
     assert.match(view, /bindSettingsSave/)
+    assert.match(view, /#startHiddenInput/)
+    assert.match(view, /startHidden: this\.\#checked\('#startHiddenInput'\)/)
     assert.doesNotMatch(view, /openAiAdminKey/)
     assert.match(controller, /normalizePersistedSettings/)
     assert.match(controller, /createPersistedSettings/)

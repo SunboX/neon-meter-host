@@ -20,6 +20,10 @@ async function main() {
     await mkdir(assetsDir, { recursive: true })
     await writePng(path.join(assetsDir, 'neon-meter-icon.png'), renderIcon(512))
     await writePng(path.join(assetsDir, 'neon-meter-tray.png'), renderIcon(32))
+    await writePng(
+        path.join(assetsDir, 'neon-meter-tray-template.png'),
+        renderTrayTemplate(32)
+    )
     await writeIco(path.join(assetsDir, 'neon-meter-icon.ico'))
 
     if (process.platform === 'darwin') {
@@ -70,6 +74,25 @@ async function createIcns() {
  * @returns {{ width: number, height: number, data: Uint8Array }}
  */
 function renderIcon(size) {
+    return renderImage(size, colorAt)
+}
+
+/**
+ * Renders the macOS menu bar template icon into RGBA pixels.
+ * @param {number} size
+ * @returns {{ width: number, height: number, data: Uint8Array }}
+ */
+function renderTrayTemplate(size) {
+    return renderImage(size, trayTemplateColorAt)
+}
+
+/**
+ * Renders an antialiased icon image into RGBA pixels.
+ * @param {number} size
+ * @param {(x: number, y: number) => number[]} colorForPoint
+ * @returns {{ width: number, height: number, data: Uint8Array }}
+ */
+function renderImage(size, colorForPoint) {
     const samples = size >= 1024 ? 2 : 3
     const data = new Uint8Array(size * size * 4)
     const scale = 512 / size
@@ -83,7 +106,7 @@ function renderIcon(size) {
                 for (let sx = 0; sx < samples; sx += 1) {
                     const px = (x + (sx + 0.5) / samples) * scale
                     const py = (y + (sy + 0.5) / samples) * scale
-                    const color = colorAt(px, py)
+                    const color = colorForPoint(px, py)
 
                     total[0] += color[0]
                     total[1] += color[1]
@@ -102,6 +125,44 @@ function renderIcon(size) {
     }
 
     return { width: size, height: size, data }
+}
+
+/**
+ * Returns the monochrome mask color for the macOS tray template icon.
+ * @param {number} x
+ * @param {number} y
+ * @returns {number[]}
+ */
+function trayTemplateColorAt(x, y) {
+    const alpha = [
+        arcColor(x, y, 164, 34, -Math.PI, 0, [0, 0, 0, 255]),
+        segmentColor(
+            x,
+            y,
+            [194, 358],
+            [320, 148],
+            34,
+            [0, 0, 0],
+            [0, 0, 0],
+            255
+        ),
+        circleColor(x, y, 194, 358, 28, [0, 0, 0, 255]),
+        circleColor(x, y, 333, 139, 18, [0, 0, 0, 255]),
+        circleColor(x, y, 128, 342, 10, [0, 0, 0, 220]),
+        circleColor(x, y, 384, 342, 10, [0, 0, 0, 220]),
+        segmentColor(
+            x,
+            y,
+            [128, 408],
+            [384, 408],
+            16,
+            [0, 0, 0],
+            [0, 0, 0],
+            245
+        )
+    ].reduce((max, color) => Math.max(max, color[3]), 0)
+
+    return [0, 0, 0, alpha]
 }
 
 /**

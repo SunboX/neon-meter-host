@@ -6,6 +6,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     rotationSeconds: 30,
     autoSync: true,
     startAtLogin: false,
+    startHidden: false,
     autoConnectBle: true,
     rememberedBleDeviceId: '',
     rememberedBleDeviceName: ''
@@ -41,6 +42,7 @@ export function createPersistedSettings(snapshot) {
         rotationSeconds: settings.rotationSeconds,
         autoSync: settings.autoSync,
         startAtLogin: settings.startAtLogin,
+        startHidden: settings.startHidden,
         autoConnectBle: settings.autoConnectBle,
         rememberedBleDeviceId: settings.rememberedBleDeviceId,
         rememberedBleDeviceName: settings.rememberedBleDeviceName,
@@ -79,6 +81,10 @@ function normalizeSettings(source) {
             typeof source.startAtLogin === 'boolean'
                 ? source.startAtLogin
                 : DEFAULT_SETTINGS.startAtLogin,
+        startHidden:
+            typeof source.startHidden === 'boolean'
+                ? source.startHidden
+                : DEFAULT_SETTINGS.startHidden,
         autoConnectBle:
             typeof source.autoConnectBle === 'boolean'
                 ? source.autoConnectBle

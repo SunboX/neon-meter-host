@@ -36,6 +36,7 @@ export class AppView {
         this.#setValue('#localeSelect', snapshot.locale)
         this.#setChecked('#autoSyncInput', snapshot.settings.autoSync !== false)
         this.#setChecked('#startAtLoginInput', snapshot.settings.startAtLogin)
+        this.#setChecked('#startHiddenInput', snapshot.settings.startHidden)
         this.#setChecked(
             '#autoConnectBleInput',
             snapshot.settings.autoConnectBle !== false
@@ -60,7 +61,8 @@ export class AppView {
                       ' seconds' +
                       (snapshot.settings.startAtLogin
                           ? ' / start at login'
-                          : '')
+                          : '') +
+                      (snapshot.settings.startHidden ? ' / start hidden' : '')
         )
         this.#setText(
             '#bleAutomationSummary',
@@ -192,6 +194,7 @@ export class AppView {
             locale: this.#value('#localeSelect') || 'en',
             autoSync: this.#checked('#autoSyncInput'),
             startAtLogin: this.#checked('#startAtLoginInput'),
+            startHidden: this.#checked('#startHiddenInput'),
             autoConnectBle: this.#checked('#autoConnectBleInput'),
             syncIntervalMinutes: this.#number('#syncIntervalInput'),
             rotationSeconds: this.#number('#rotationSecondsInput')
