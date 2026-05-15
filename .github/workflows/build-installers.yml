@@ -4,10 +4,20 @@ on:
     push:
         branches:
             - main
+        tags:
+            - 'v*'
+    release:
+        types:
+            - published
     workflow_dispatch:
+        inputs:
+            release_tag:
+                description: Release tag to build and upload, for example v1.0.0.
+                required: false
+                type: string
 
 permissions:
-    contents: read
+    contents: write
 
 jobs:
     build:
@@ -41,6 +51,8 @@ jobs:
         steps:
             - name: Check out repository
               uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.event.inputs.release_tag || github.ref }}
 
             - name: Set up Node.js
               uses: actions/setup-node@v4
@@ -95,3 +107,26 @@ jobs:
                   path: dist/**
                   if-no-files-found: error
                   retention-days: 14
+
+            - name: Resolve release tag
+              id: release
+              if: >-
+                  github.event_name == 'release' ||
+                  (github.event_name == 'workflow_dispatch' &&
+                  github.event.inputs.release_tag != '')
+              shell: bash
+              run: |
+                  if [ "${{ github.event_name }}" = "release" ]; then
+                      tag="${{ github.event.release.tag_name }}"
+                  elif [ -n "${{ github.event.inputs.release_tag }}" ]; then
+                      tag="${{ github.event.inputs.release_tag }}"
+                  else
+                      tag="${GITHUB_REF_NAME}"
+                  fi
+                  echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+
+            - name: Upload installers to GitHub release
+              if: steps.release.outputs.tag != ''
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: gh release upload "${{ steps.release.outputs.tag }}" dist/* --clobber

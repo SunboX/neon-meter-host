@@ -17,6 +17,12 @@
 - Test: `npm test`
 - Format: `npm run format`
 
+## Release Rules
+
+- Every GitHub release must include installer artifacts for all configured build targets.
+- Use the `Build installers` GitHub Actions workflow for releases; do not finish a release from tag and notes alone.
+- For an existing release, run the workflow manually with `release_tag` set to the release tag and verify the release assets are attached before reporting completion.
+
 ## Architecture Rules
 
 - Keep OpenAI API calls in the Neon Meter app.

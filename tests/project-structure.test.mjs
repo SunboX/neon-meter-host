@@ -85,3 +85,21 @@ test('package scripts include start and test', async () => {
         url: 'https://github.com/SunboX'
     })
 })
+
+/**
+ * Verifies release automation cannot stop at workflow artifacts only.
+ */
+test('release workflow uploads installer artifacts to GitHub releases', async () => {
+    const workflow = await readFile(
+        new URL('.github/workflows/build-installers.yml', root),
+        'utf8'
+    )
+
+    assert.match(workflow, /tags:\s*\n\s*-\s*'v\*'/)
+    assert.match(workflow, /release:\s*\n\s*types:\s*\n\s*-\s*published/)
+    assert.match(workflow, /contents:\s*write/)
+    assert.match(workflow, /release_tag:/)
+    assert.match(workflow, /npm run dist -- --\$\{\{ matrix\.platform \}\}/)
+    assert.match(workflow, /gh release upload/)
+    assert.match(workflow, /--clobber/)
+})
