@@ -53,7 +53,7 @@ test('buildFirmwarePayload falls back to provider defaults and limits detail tex
 })
 
 test('reset helpers return minutes until local day and month boundaries', () => {
-    const now = new Date('2026-05-15T10:30:00+02:00')
+    const now = new Date(2026, 4, 15, 10, 30, 0, 0)
 
     assert.equal(minutesUntilEndOfDay(now), 810)
     assert.equal(minutesUntilEndOfMonth(now), 23850)
