@@ -42,6 +42,28 @@ test('provider credential resolver reads Codex auth credentials', async () => {
     })
 })
 
+test('provider credential resolver resolves Windows Codex auth path', async () => {
+    const resolver = createProviderCredentialResolver({
+        platform: 'win32',
+        homeDir: 'C:\\Users\\user',
+        env: {},
+        async readFileImpl(filePath) {
+            assert.equal(filePath, 'C:\\Users\\user\\.codex\\auth.json')
+            return JSON.stringify({
+                tokens: {
+                    access_token: 'chatgpt-token',
+                    account_id: 'account-id'
+                }
+            })
+        }
+    })
+
+    assert.deepEqual(await resolver.getChatGptCredentials(), {
+        accessToken: 'chatgpt-token',
+        accountId: 'account-id'
+    })
+})
+
 test('provider credential resolver reports only configured status metadata', async () => {
     const resolver = createProviderCredentialResolver({
         platform: 'darwin',

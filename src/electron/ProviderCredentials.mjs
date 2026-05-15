@@ -25,6 +25,7 @@ const execFileAsync = promisify(execFile)
  */
 export function createProviderCredentialResolver(options = {}) {
     const platform = options.platform || process.platform
+    const pathApi = platform === 'win32' ? path.win32 : path.posix
     const homeDir = options.homeDir || homedir()
     const env = options.env || process.env
     const userName = String(env.USER || env.LOGNAME || 'user').trim() || 'user'
@@ -70,7 +71,7 @@ export function createProviderCredentialResolver(options = {}) {
         }
 
         const fileToken = await readTokenFile(
-            path.join(homeDir, '.claude', '.credentials.json'),
+            pathApi.join(homeDir, '.claude', '.credentials.json'),
             extractClaudeAccessToken,
             readFileImpl
         )
@@ -122,7 +123,10 @@ export function createProviderCredentialResolver(options = {}) {
      */
     function resolveCodexAuthPath() {
         const codexHome = String(env.CODEX_HOME || '').trim()
-        return path.join(codexHome || path.join(homeDir, '.codex'), 'auth.json')
+        return pathApi.join(
+            codexHome || pathApi.join(homeDir, '.codex'),
+            'auth.json'
+        )
     }
 }
 
