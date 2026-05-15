@@ -1,0 +1,15 @@
+{
+    "app.kicker": "Web App Starter",
+    "app.title": "Neon Meter Host",
+    "app.subtitle": "Structured scaffold with docs, specs, and tests.",
+    "app.language": "Language",
+    "locale.en": "English",
+    "locale.de": "Deutsch",
+    "actions.increment": "Increment",
+    "actions.reset": "Reset",
+    "metrics.counter": "Counter",
+    "status.ready": "Ready.",
+    "status.counterUpdated": "Counter updated.",
+    "status.reset": "Counter reset.",
+    "status.localeChanged": "Language updated."
+}

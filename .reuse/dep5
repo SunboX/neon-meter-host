@@ -1,0 +1,42 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: neon-meter-host
+Upstream-Contact: André Fiedler / SunboX <https://github.com/SunboX>
+Source: https://github.com/SunboX/neon-meter-host
+
+Files:
+ .github/workflows/build-installers.yml
+ .gitignore
+ .prettierrc.json
+ AGENTS.md
+ package-lock.json
+ package.json
+ scripts/*.mjs
+ spec/*.md
+ specs/*.md
+ src/*.mjs
+ src/*.html
+ src/*.css
+ src/ble/*.mjs
+ src/core/*.mjs
+ src/electron/*.cjs
+ src/electron/*.mjs
+ src/i18n/*.json
+ src/providers/*.mjs
+ src/styles/*.css
+ src/ui/*.mjs
+ tests/*.md
+ tests/*.mjs
+Copyright: 2026 André Fiedler
+License: AGPL-3.0-or-later
+
+Files:
+ README.md
+ COMMERCIAL-LICENSE.md
+ NOTICE.md
+ docs/*.md
+ docs/assets/*
+ docs/screenshots/*
+ src/assets/neon-meter-icon.*
+ src/assets/neon-meter-tray.png
+Copyright: 2026 André Fiedler
+License: CC-BY-SA-4.0

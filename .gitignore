@@ -1,0 +1,11 @@
+node_modules
+.env
+.DS_Store
+coverage
+dist
+.superpowers
+/docs/superpowers
+.playwright-cli
+output/playwright
+.electron-runtime
+.icon-build

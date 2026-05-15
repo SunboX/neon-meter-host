@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Neon Meter</title>
+        <link
+            rel="icon"
+            href="assets/neon-meter-icon.svg"
+            type="image/svg+xml"
+        />
+        <link rel="stylesheet" href="style.css" />
+    </head>
+    <body class="neon-meter-app">
+        <main class="app-shell">
+            <header class="topbar">
+                <div class="brand">
+                    <div class="brand-mark" aria-hidden="true">
+                        <img
+                            class="brand-icon"
+                            src="assets/neon-meter-icon.png"
+                            width="46"
+                            height="46"
+                            alt=""
+                        />
+                    </div>
+                    <div>
+                        <p class="eyebrow">Usage relay</p>
+                        <h1>Neon Meter</h1>
+                    </div>
+                </div>
+                <div class="toolbar">
+                    <button id="settingsButton" class="btn-secondary">
+                        Settings
+                    </button>
+                    <span id="appVersion" class="version-pill">v—</span>
+                </div>
+            </header>
+
+            <section class="status-strip">
+                <article class="status-item">
+                    <span>BLE</span>
+                    <strong id="bleState">Disconnected</strong>
+                    <small id="bleDevice">Neon Meter CoreS3</small>
+                </article>
+                <article class="status-item">
+                    <span>Sync</span>
+                    <strong id="syncStatus">Ready</strong>
+                    <small>Last: <b id="lastSync">Never</b></small>
+                </article>
+                <div class="button-row">
+                    <button id="connectButton" class="btn-primary">
+                        Connect
+                    </button>
+                    <button id="disconnectButton" class="btn-secondary">
+                        Disconnect
+                    </button>
+                    <button id="syncButton" class="btn-primary">
+                        Sync now
+                    </button>
+                </div>
+            </section>
+
+            <section class="workspace">
+                <section class="panel settings-panel">
+                    <div class="section-heading">
+                        <h2>Settings</h2>
+                    </div>
+                    <dl class="settings-summary">
+                        <div>
+                            <dt>Source</dt>
+                            <dd id="providerSummary">Auto-detect providers</dd>
+                        </div>
+                        <div>
+                            <dt>Daemon</dt>
+                            <dd id="daemonSummary">
+                                Every 5 minutes / rotate 30 seconds
+                            </dd>
+                        </div>
+                        <div>
+                            <dt>Device</dt>
+                            <dd id="bleAutomationSummary">
+                                Auto-connect latest device
+                            </dd>
+                        </div>
+                    </dl>
+                    <button
+                        id="settingsPanelButton"
+                        class="btn-primary settings-panel-button"
+                    >
+                        Settings
+                    </button>
+                </section>
+
+                <section class="panel output-panel">
+                    <div class="section-heading">
+                        <h2>Device payload</h2>
+                    </div>
+                    <pre id="payloadPreview">{}</pre>
+                    <p id="syncError" class="error-line" aria-live="polite"></p>
+                    <div class="security-note">
+                        <strong>Credential handling</strong>
+                        <span>
+                            Tokens are detected by the Neon Meter app from
+                            Claude Code or Codex auth files.
+                        </span>
+                    </div>
+                </section>
+            </section>
+        </main>
+
+        <dialog id="settingsDialog" class="settings-dialog">
+            <form id="settingsForm" class="settings-card" autocomplete="off">
+                <header class="settings-card-header">
+                    <div>
+                        <p class="eyebrow">Configuration</p>
+                        <h2>Neon Meter Settings</h2>
+                    </div>
+                    <span class="version-pill">Stored locally</span>
+                </header>
+
+                <div class="settings-grid">
+                    <section class="settings-block">
+                        <div class="section-heading">
+                            <h2>App</h2>
+                        </div>
+                        <label class="field" for="localeSelect">
+                            <span>Language</span>
+                            <select id="localeSelect">
+                                <option value="en">English</option>
+                                <option value="de">Deutsch</option>
+                            </select>
+                        </label>
+                    </section>
+
+                    <section class="settings-block">
+                        <div class="section-heading">
+                            <h2>Providers</h2>
+                        </div>
+                        <p class="note">
+                            Auto-detect Claude Code and ChatGPT/Codex from local
+                            tool auth. If both are available, both are sent to
+                            the device.
+                        </p>
+                    </section>
+
+                    <section class="settings-block">
+                        <div class="section-heading">
+                            <h2>Daemon</h2>
+                        </div>
+                        <label class="switch-row" for="autoSyncInput">
+                            <input
+                                id="autoSyncInput"
+                                data-setting
+                                type="checkbox"
+                            />
+                            <span>Auto sync</span>
+                        </label>
+                        <label class="switch-row" for="startAtLoginInput">
+                            <input
+                                id="startAtLoginInput"
+                                data-setting
+                                type="checkbox"
+                            />
+                            <span>Start at login</span>
+                        </label>
+                        <label class="field" for="syncIntervalInput">
+                            <span>Interval minutes</span>
+                            <input
+                                id="syncIntervalInput"
+                                data-setting
+                                type="number"
+                                min="1"
+                                step="1"
+                            />
+                        </label>
+                        <label class="field" for="rotationSecondsInput">
+                            <span>Rotation seconds</span>
+                            <input
+                                id="rotationSecondsInput"
+                                data-setting
+                                type="number"
+                                min="5"
+                                step="1"
+                            />
+                        </label>
+                    </section>
+
+                    <section class="settings-block">
+                        <div class="section-heading">
+                            <h2>Device</h2>
+                        </div>
+                        <label class="switch-row" for="autoConnectBleInput">
+                            <input
+                                id="autoConnectBleInput"
+                                data-setting
+                                type="checkbox"
+                            />
+                            <span>Auto-connect latest BLE device</span>
+                        </label>
+                        <p class="note">
+                            The latest connected device is stored locally so
+                            startup can reconnect without the chooser when the
+                            browser permission is still available.
+                        </p>
+                    </section>
+
+                    <section class="settings-block">
+                        <div class="security-note">
+                            <strong>Secret handling</strong>
+                            <span
+                                >No credentials are collected here. Existing
+                                local tool credentials stay in their original
+                                locations and are read only by the Neon Meter
+                                app.</span
+                            >
+                        </div>
+                    </section>
+                </div>
+
+                <footer class="settings-actions">
+                    <button
+                        id="settingsCancelButton"
+                        class="btn-secondary"
+                        type="button"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        id="settingsSaveButton"
+                        class="btn-primary"
+                        type="submit"
+                    >
+                        Save settings
+                    </button>
+                </footer>
+            </form>
+        </dialog>
+
+        <script type="module" src="main.mjs"></script>
+    </body>
+</html>

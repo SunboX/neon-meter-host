@@ -1,0 +1,69 @@
+{
+    "name": "neon-meter-host",
+    "version": "0.1.0",
+    "productName": "Neon Meter",
+    "description": "Electron host daemon for syncing AI usage to the AI Meter CoreS3 over BLE.",
+    "license": "AGPL-3.0-or-later",
+    "private": true,
+    "type": "module",
+    "main": "src/electron/main.mjs",
+    "scripts": {
+        "start": "node scripts/start-neon-meter.mjs",
+        "dev": "node scripts/start-neon-meter.mjs",
+        "serve": "node src/server.mjs",
+        "assets:icons": "node scripts/generate-neon-meter-icons.mjs",
+        "dist": "electron-builder --publish=never",
+        "dist:dir": "electron-builder --dir --publish=never",
+        "test": "node --test tests",
+        "format": "prettier --write .",
+        "check:format": "prettier --check ."
+    },
+    "dependencies": {
+        "express": "^5.1.0"
+    },
+    "devDependencies": {
+        "electron": "^39.2.6",
+        "electron-builder": "^26.8.1",
+        "prettier": "^3.4.2"
+    },
+    "engines": {
+        "node": ">=20"
+    },
+    "build": {
+        "appId": "com.andreswerkstatt.neon-meter-host",
+        "artifactName": "Neon-Meter-${version}-${os}-${arch}.${ext}",
+        "asar": true,
+        "directories": {
+            "output": "dist"
+        },
+        "files": [
+            "package.json",
+            "src/**/*"
+        ],
+        "mac": {
+            "category": "public.app-category.utilities",
+            "identity": "-",
+            "icon": "src/assets/neon-meter-icon.icns",
+            "target": [
+                "dmg",
+                "zip"
+            ]
+        },
+        "win": {
+            "icon": "src/assets/neon-meter-icon.ico",
+            "target": [
+                "nsis",
+                "zip"
+            ]
+        },
+        "linux": {
+            "category": "Utility",
+            "icon": "src/assets/neon-meter-icon.png",
+            "target": [
+                "AppImage",
+                "deb",
+                "tar.gz"
+            ]
+        }
+    }
+}

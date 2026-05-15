@@ -1,0 +1,15 @@
+{
+    "app.kicker": "Web-App-Starter",
+    "app.title": "Neon Meter Host",
+    "app.subtitle": "Strukturiertes Grundgerüst mit Doku, Spezifikation und Tests.",
+    "app.language": "Sprache",
+    "locale.en": "English",
+    "locale.de": "Deutsch",
+    "actions.increment": "Erhöhen",
+    "actions.reset": "Zurücksetzen",
+    "metrics.counter": "Zähler",
+    "status.ready": "Bereit.",
+    "status.counterUpdated": "Zähler aktualisiert.",
+    "status.reset": "Zähler zurückgesetzt.",
+    "status.localeChanged": "Sprache aktualisiert."
+}

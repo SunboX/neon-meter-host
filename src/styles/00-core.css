@@ -1,0 +1,91 @@
+:root {
+    --bg-primary: #050914;
+    --bg-secondary: #08111f;
+    --panel: rgba(9, 18, 32, 0.92);
+    --panel-soft: rgba(15, 27, 45, 0.78);
+    --panel-strong: #101b2b;
+    --text: #dff7ff;
+    --muted: #8ea7b8;
+    --border: rgba(0, 245, 255, 0.28);
+    --border-soft: rgba(142, 167, 184, 0.22);
+    --accent-cyan: #00f5ff;
+    --accent-orange: #ff6a00;
+    --accent-green: #68ff9b;
+    --warn: #ff5470;
+    --code-bg: rgba(2, 8, 15, 0.92);
+    --field-bg: rgba(3, 9, 17, 0.88);
+    --radius: 8px;
+    --font-display: Orbitron, Rajdhani, 'Segoe UI', system-ui, sans-serif;
+    --font-body:
+        'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas,
+        monospace;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    min-height: 100%;
+}
+
+html {
+    background: var(--bg-primary);
+}
+
+body.neon-meter-app {
+    min-height: 100vh;
+    font-family: var(--font-body);
+    background-color: var(--bg-primary);
+    background-image:
+        repeating-linear-gradient(
+            0deg,
+            rgba(255, 255, 255, 0.018),
+            rgba(255, 255, 255, 0.018) 1px,
+            transparent 1px,
+            transparent 3px
+        ),
+        linear-gradient(rgba(0, 245, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 245, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(180deg, var(--bg-secondary), var(--bg-primary));
+    background-size:
+        auto,
+        32px 32px,
+        32px 32px,
+        auto;
+    color: var(--text);
+}
+
+button,
+select,
+input {
+    font: inherit;
+}
+
+button {
+    border: 0;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+    outline: 2px solid rgba(0, 245, 255, 0.62);
+    outline-offset: 2px;
+}
+
+code {
+    background: var(--code-bg);
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+    color: #b7f8ff;
+    padding: 0.05rem 0.3rem;
+}
+
+pre {
+    margin: 0;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
