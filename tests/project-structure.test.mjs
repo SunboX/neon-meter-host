@@ -79,4 +79,9 @@ test('package scripts include start and test', async () => {
     assert.equal(pkg.scripts.start, 'node scripts/start-neon-meter.mjs')
     assert.equal(pkg.scripts.dev, 'node scripts/start-neon-meter.mjs')
     assert.equal(pkg.scripts.test, 'node scripts/run-tests.mjs')
+    assert.deepEqual(pkg.author, {
+        name: 'André Fiedler',
+        email: '83344+SunboX@users.noreply.github.com',
+        url: 'https://github.com/SunboX'
+    })
 })

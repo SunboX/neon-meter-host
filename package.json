@@ -4,6 +4,11 @@
     "productName": "Neon Meter",
     "description": "Electron host daemon for syncing AI usage to the AI Meter CoreS3 over BLE.",
     "license": "AGPL-3.0-or-later",
+    "author": {
+        "name": "André Fiedler",
+        "email": "83344+SunboX@users.noreply.github.com",
+        "url": "https://github.com/SunboX"
+    },
     "private": true,
     "type": "module",
     "main": "src/electron/main.mjs",
