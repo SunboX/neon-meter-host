@@ -49,6 +49,7 @@ test('required project files exist', async () => {
         'src/providers/ClaudeCodeUsageProvider.mjs',
         'src/providers/ChatGptUsageProvider.mjs',
         'src/ui/AppView.mjs',
+        'scripts/run-tests.mjs',
         'tests/app-state.test.mjs',
         'tests/project-structure.test.mjs',
         'tests/mjs-line-limit.test.mjs',
@@ -77,4 +78,5 @@ test('package scripts include start and test', async () => {
     assert.equal(typeof pkg.scripts?.test, 'string')
     assert.equal(pkg.scripts.start, 'node scripts/start-neon-meter.mjs')
     assert.equal(pkg.scripts.dev, 'node scripts/start-neon-meter.mjs')
+    assert.equal(pkg.scripts.test, 'node scripts/run-tests.mjs')
 })
