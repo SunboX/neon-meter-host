@@ -60,6 +60,10 @@ jobs:
                   node-version: 22
                   cache: npm
 
+            - name: Install Linux native build dependencies
+              if: matrix.platform == 'linux'
+              run: sudo apt-get update && sudo apt-get install -y libudev-dev
+
             - name: Install dependencies
               run: npm ci
 
