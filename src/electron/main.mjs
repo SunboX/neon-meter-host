@@ -10,6 +10,10 @@ import {
     setAutostartEnabled
 } from './AutostartSettings.mjs'
 import { createBluetoothDeviceSelector } from './BluetoothDeviceSelector.mjs'
+import { NativeNobleAiMeterClient } from '../ble/NativeNobleAiMeterClient.mjs'
+import { NativeUsbSerialAiMeterClient } from '../usb/NativeUsbSerialAiMeterClient.mjs'
+import { PreferredAiMeterClient } from '../transport/PreferredAiMeterClient.mjs'
+import { registerNativeBleIpc } from './NativeBleIpc.mjs'
 import { createProviderCredentialResolver } from './ProviderCredentials.mjs'
 
 const require = createRequire(import.meta.url)
@@ -31,6 +35,9 @@ let mainWindow = null
 let tray = null
 
 const credentialResolver = createProviderCredentialResolver()
+const usbClient = new NativeUsbSerialAiMeterClient()
+const bleClient = new NativeNobleAiMeterClient()
+const deviceClient = new PreferredAiMeterClient({ usbClient, bleClient })
 
 /**
  * Creates the main Electron window.
@@ -53,6 +60,7 @@ function createWindow(options = {}) {
             contextIsolation: true,
             nodeIntegration: false,
             sandbox: false,
+            backgroundThrottling: false,
             experimentalFeatures: true
         }
     })
@@ -212,10 +220,17 @@ function registerIpc() {
     ipcMain.handle('provider:fetch-bundle', async (_event, settings) => {
         return fetchProviderBundle(settings)
     })
+
+    registerNativeBleIpc({
+        ipcMain,
+        bleClient: deviceClient,
+        getWebContents: () =>
+            BrowserWindow.getAllWindows().map((window) => window.webContents)
+    })
 }
 
 /**
- * Fetches a BLE provider bundle for all detected providers.
+ * Fetches a firmware provider bundle for all detected providers.
  * @param {unknown} settings
  * @returns {Promise<object>}
  */
@@ -349,6 +364,10 @@ app.whenReady()
 
 app.on('activate', () => {
     showMainWindow()
+})
+
+app.on('before-quit', () => {
+    deviceClient.disconnect()
 })
 
 app.on('window-all-closed', () => {

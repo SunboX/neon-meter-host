@@ -1,8 +1,59 @@
-# BLE Protocol
+# Device Transport Protocol
 
-Neon Meter Host uses Web Bluetooth in the Electron renderer to communicate with the CoreS3 firmware.
+Neon Meter Host sends the same provider bundle over USB serial or BLE. Packaged
+Electron builds prefer USB serial whenever a CoreS3 answers the USB protocol
+handshake, then fall back to native BLE. The static browser preview can still
+use Web Bluetooth as a fallback for manual testing.
 
-## Device
+## USB Serial
+
+- Transport: USB CDC serial at `115200` baud.
+- Port signals: DTR must be high so ESP32-S3 USB CDC delivers serial traffic;
+  RTS stays low to avoid toggling the boot/reset line.
+- Framing: newline-delimited UTF-8 JSON objects.
+- Host probe:
+
+```json
+{ "type": "hello", "protocol": "neon-meter-usb", "version": 1 }
+```
+
+- Firmware hello:
+
+```json
+{
+    "type": "hello",
+    "protocol": "neon-meter-usb",
+    "version": 1,
+    "device": "Neon Meter"
+}
+```
+
+- Host heartbeat, sent every 5 seconds after connection:
+
+```json
+{ "type": "ping", "protocol": "neon-meter-usb", "version": 1 }
+```
+
+- Payload write:
+
+```json
+{ "type": "payload", "payload": { "rotationSeconds": 30, "providers": [] } }
+```
+
+- Firmware control frames:
+    - `{"type":"ack","ack":true}`
+    - `{"type":"err","err":true}`
+    - `{"type":"refresh-requested"}`
+
+The firmware does not answer heartbeat frames. It clears the USB app connection
+when no inbound USB protocol frame arrives for more than 15 seconds. The
+firmware also accepts raw provider bundles and raw single-provider objects as
+compatibility frames. The host ignores non-JSON serial log lines and unknown
+JSON frames.
+
+## BLE
+
+### Device
 
 - Advertised name: `Neon Meter`
 - Legacy advertised name accepted by the host: `AI Meter`
@@ -11,14 +62,22 @@ Neon Meter Host uses Web Bluetooth in the Electron renderer to communicate with 
 - TX notify/read characteristic: `41494d45-7465-7220-0000-000000000003`
 - Refresh notify characteristic: `41494d45-7465-7220-0000-000000000004`
 
-## Flow
+### Flow
 
-1. The user selects `Connect`.
-2. Electron's Bluetooth device selector chooses the first visible `Neon Meter`
-   device, or a legacy `AI Meter` device.
-3. The renderer subscribes to TX acknowledgements and refresh requests.
-4. The host writes a provider bundle JSON payload to RX.
-5. The firmware responds on TX with `{"ack":true}` or `{"err":true}`.
+1. The Electron main process first probes local USB serial ports for the Neon
+   Meter USB hello response.
+2. If no USB device is present, it scans for a `Neon Meter` BLE device, or a
+   legacy `AI Meter` device.
+3. While connected over BLE, the renderer keeps a low-rate USB probe active so
+   a later USB cable hotplug switches the active transport to USB.
+4. On app startup, BLE fallback scans for the remembered local device identity
+   when auto-connect is enabled.
+5. The native BLE client subscribes to TX acknowledgements and refresh
+   requests.
+6. The host writes a provider bundle JSON payload to RX.
+7. The firmware responds on TX with `{"ack":true}` or `{"err":true}`.
+8. The main process forwards acknowledgements and refresh requests to the
+   renderer over IPC.
 
 ## Bundle Shape
 

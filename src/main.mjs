@@ -2,6 +2,7 @@ import { AppController } from './AppController.mjs'
 import { AppState } from './core/AppState.mjs'
 import { buildProviderBundlePayload } from './core/ProviderBundle.mjs'
 import { AppView } from './ui/AppView.mjs'
+import { IpcBleClient } from './ble/IpcBleClient.mjs'
 import { WebBluetoothAiMeterClient } from './ble/WebBluetoothAiMeterClient.mjs'
 import { I18nService } from './I18n.mjs'
 
@@ -15,16 +16,36 @@ async function bootstrap() {
     const i18n = await I18nService.create('en')
     const state = new AppState({ locale: i18n ? i18n.getLocale() : 'en' })
     const view = new AppView(document)
+    const bridge = createBridge()
     const controller = new AppController({
         state,
         view,
         i18n,
-        bridge: createBridge(),
-        bleClient: new WebBluetoothAiMeterClient()
+        bridge,
+        bleClient: createBleClient(bridge)
     })
 
     await controller.init()
     window.addEventListener('beforeunload', () => controller.dispose())
+}
+
+/**
+ * Returns the native Electron device client, falling back to Web Bluetooth.
+ * @param {ReturnType<typeof createBridge>} bridge
+ * @returns {IpcBleClient | WebBluetoothAiMeterClient}
+ */
+function createBleClient(bridge) {
+    try {
+        if (
+            typeof bridge.isBleSupported === 'function' &&
+            bridge.isBleSupported()
+        ) {
+            return new IpcBleClient({ bridge })
+        }
+    } catch (_error) {
+        // Static preview or unsupported native bindings fall back below.
+    }
+    return new WebBluetoothAiMeterClient()
 }
 
 /**

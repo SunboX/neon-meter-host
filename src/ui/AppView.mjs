@@ -26,6 +26,10 @@ export class AppView {
             snapshot.ble.deviceName || 'Neon Meter CoreS3'
         )
         this.#setText('#syncStatus', snapshot.sync.status || 'Ready')
+        this.#setHidden(
+            '#syncLoader',
+            !snapshot.ble.connecting && !snapshot.sync.running
+        )
         this.#setText('#syncError', snapshot.sync.error || '')
         this.#setText('#lastSync', snapshot.sync.lastSync || 'Never')
         this.#setText(
@@ -70,15 +74,27 @@ export class AppView {
                 ? 'Manual connection'
                 : snapshot.settings.rememberedBleDeviceName
                   ? 'Auto-connect ' + snapshot.settings.rememberedBleDeviceName
-                  : 'Auto-connect latest device'
+                  : 'Auto-connect USB or latest BLE'
         )
 
         this.#setDisabled(
             '#connectButton',
-            snapshot.ble.connected || !snapshot.ble.supported
+            snapshot.ble.connected ||
+                snapshot.ble.connecting ||
+                !snapshot.ble.supported
         )
-        this.#setDisabled('#disconnectButton', !snapshot.ble.connected)
-        this.#setDisabled('#syncButton', snapshot.sync.running)
+        this.#setText(
+            '#connectButton',
+            snapshot.ble.connecting ? 'Connecting' : 'Connect'
+        )
+        this.#setDisabled(
+            '#disconnectButton',
+            !snapshot.ble.connected || snapshot.ble.connecting
+        )
+        this.#setDisabled(
+            '#syncButton',
+            snapshot.sync.running || snapshot.ble.connecting
+        )
     }
 
     /**
@@ -241,6 +257,11 @@ export class AppView {
     #setDisabled(selector, value) {
         const node = this.#button(selector)
         if (node) node.disabled = Boolean(value)
+    }
+
+    #setHidden(selector, value) {
+        const node = this.#document.querySelector(selector)
+        if (node) node.hidden = Boolean(value)
     }
 
     #value(selector) {

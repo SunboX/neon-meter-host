@@ -5,7 +5,8 @@
 - Node.js 20+
 - npm
 - Neon Meter firmware running on the M5Stack CoreS3
-- Bluetooth enabled on the host computer
+- USB cable connected to the CoreS3, or Bluetooth enabled on the host computer
+- Linux only: BlueZ running and adapter access for the desktop user
 
 ## Install
 
@@ -26,8 +27,12 @@ the local machine. There is no API-token field in the UI.
 
 1. Power on the CoreS3 running Neon Meter firmware.
 2. Start Neon Meter Host.
-3. Click `Connect` and allow Bluetooth selection.
+3. Click `Connect` once so Neon Meter can store the local device identity.
 4. Click `Sync now`, or enable auto sync.
+
+Electron builds prefer USB when the CoreS3 is connected by cable. If USB is not
+present, the app uses native BLE and can reconnect to the latest BLE device on
+restart without showing the Bluetooth chooser.
 
 ## Static Preview
 
@@ -37,7 +42,7 @@ For a browser-only UI preview:
 npm run serve
 ```
 
-Open [http://localhost:3417/](http://localhost:3417/). BLE and live quota sync require Electron.
+Open [http://localhost:3417/](http://localhost:3417/). USB/BLE and live quota sync require Electron.
 
 ## Build Installers
 

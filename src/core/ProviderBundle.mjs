@@ -3,7 +3,7 @@ import { buildFirmwarePayload } from './FirmwarePayload.mjs'
 export const DEFAULT_ROTATION_SECONDS = 30
 
 /**
- * Builds the BLE envelope used when the host has one or more detected providers.
+ * Builds the firmware envelope used when the host has one or more detected providers.
  * @param {object[]} providers
  * @param {{ rotationSeconds?: number }} [options]
  * @returns {{ providers: object[], rotationSeconds: number }}

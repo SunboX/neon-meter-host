@@ -43,3 +43,18 @@ test('startup can keep the main window and macOS Dock hidden from persisted sett
         /window\.once\('ready-to-show',\s*\(\)\s*=>\s*{\s*if \(startHidden\) {\s*hideMainWindow\(\)\s*return\s*}\s*showMainWindow\(\)\s*}\)/s
     )
 })
+
+test('hidden daemon window keeps reconnect timers active', async () => {
+    const main = await readFile(new URL('src/electron/main.mjs', root), 'utf8')
+
+    assert.match(main, /backgroundThrottling:\s*false/)
+})
+
+test('app quit explicitly disconnects native device transports before process exit', async () => {
+    const main = await readFile(new URL('src/electron/main.mjs', root), 'utf8')
+
+    assert.match(
+        main,
+        /app\.on\('before-quit',\s*\(\)\s*=>\s*{\s*deviceClient\.disconnect\(\)\s*}\s*\)/s
+    )
+})

@@ -11,6 +11,7 @@ test('AppState initializes with defaults', () => {
 
     assert.equal(snapshot.provider, 'auto')
     assert.equal(snapshot.ble.connected, false)
+    assert.equal(snapshot.ble.connecting, false)
     assert.equal(snapshot.sync.running, false)
     assert.equal(snapshot.locale, 'en')
 })

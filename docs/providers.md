@@ -6,8 +6,8 @@ settings file stores only locale, auto-sync, sync interval, and display rotation
 seconds.
 
 The host always auto-detects both supported providers. If one is available, the
-BLE device shows that one provider. If both are available, the host sends both
-payloads in one BLE envelope and the device rotates between them.
+device shows that one provider. If both are available, the host sends both
+payloads in one firmware bundle and the device rotates between them.
 
 ## Claude Code
 
@@ -31,7 +31,7 @@ payloads in one BLE envelope and the device rotates between them.
 - Usage fields are mapped from the returned 5-hour/session and weekly windows
   when present.
 
-## BLE Payload
+## Firmware Payload
 
 Each provider maps into the same compact firmware payload:
 

@@ -43,9 +43,12 @@ test('required project files exist', async () => {
         'src/electron/main.mjs',
         'src/electron/preload.cjs',
         'src/ble/WebBluetoothAiMeterClient.mjs',
+        'src/ble/IpcBleClient.mjs',
+        'src/ble/NativeNobleAiMeterClient.mjs',
         'src/core/AppState.mjs',
         'src/core/FirmwarePayload.mjs',
         'src/core/ProviderBundle.mjs',
+        'src/electron/NativeBleIpc.mjs',
         'src/providers/ClaudeCodeUsageProvider.mjs',
         'src/providers/ChatGptUsageProvider.mjs',
         'src/ui/AppView.mjs',
@@ -65,6 +68,30 @@ test('required project files exist', async () => {
             'Missing file: ' + relativePath
         )
     }
+})
+
+test('native BLE packaging is configured for restart reconnect', async () => {
+    const rawPackage = await readFile(new URL('package.json', root), 'utf8')
+    const preload = await readFile(
+        new URL('src/electron/preload.cjs', root),
+        'utf8'
+    )
+    const main = await readFile(new URL('src/electron/main.mjs', root), 'utf8')
+    const pkg = JSON.parse(rawPackage)
+
+    assert.equal(pkg.dependencies['@stoprocent/noble'], '^2.5.3')
+    assert.match(main, /new NativeNobleAiMeterClient\(\)/)
+    assert.match(main, /registerNativeBleIpc\(/)
+    assert.match(preload, /bleConnectRemembered/)
+    assert.deepEqual(pkg.build.asarUnpack, ['node_modules/**/*.node'])
+    assert.equal(
+        pkg.build.mac.extendInfo.NSBluetoothAlwaysUsageDescription,
+        'Neon Meter uses Bluetooth to reconnect to your CoreS3 meter and sync local usage status.'
+    )
+    assert.equal(
+        pkg.build.mac.extendInfo.NSBluetoothPeripheralUsageDescription,
+        'Neon Meter uses Bluetooth to reconnect to your CoreS3 meter and sync local usage status.'
+    )
 })
 
 /**

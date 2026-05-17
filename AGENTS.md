@@ -28,7 +28,7 @@
 - Keep OpenAI API calls in the Neon Meter app.
 - Do not expose API keys to the renderer, BLE payloads, localStorage, or settings files.
 - Keep BLE UUIDs synchronized with the firmware docs in the sibling `AI-Meter` project.
-- Use Web Bluetooth from the renderer; use the preload bridge only for trusted main-process capabilities.
+- Use native BLE from the Electron main process for persistent reconnect; keep Web Bluetooth only as a renderer fallback for static preview or native BLE load failures.
 - Keep provider adapters in `src/providers/` and shared payload shaping in `src/core/FirmwarePayload.mjs`.
 
 ## Coding Style

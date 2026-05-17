@@ -177,6 +177,24 @@ h2 {
     text-shadow: 0 0 10px rgba(0, 245, 255, 0.26);
 }
 
+.status-line {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+}
+
+.status-loader {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    border: 2px solid rgba(0, 245, 255, 0.22);
+    border-top-color: var(--accent-orange);
+    border-radius: 50%;
+    animation: status-spin 0.8s linear infinite;
+    box-shadow: 0 0 10px rgba(255, 106, 0, 0.24);
+}
+
 .workspace {
     display: grid;
     grid-template-columns: 360px minmax(0, 1fr);
@@ -428,6 +446,18 @@ button:disabled {
 
 [hidden] {
     display: none !important;
+}
+
+@keyframes status-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .status-loader {
+        animation: none;
+    }
 }
 
 @media (max-width: 860px) {

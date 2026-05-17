@@ -1,8 +1,8 @@
 {
     "name": "neon-meter-host",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "productName": "Neon Meter",
-    "description": "Electron host daemon for syncing AI usage to the AI Meter CoreS3 over BLE.",
+    "description": "Electron host daemon for syncing AI usage to the Neon Meter CoreS3 over USB or BLE.",
     "license": "AGPL-3.0-or-later",
     "author": {
         "name": "André Fiedler",
@@ -24,7 +24,9 @@
         "check:format": "prettier --check ."
     },
     "dependencies": {
-        "express": "^5.1.0"
+        "@stoprocent/noble": "^2.5.3",
+        "express": "^5.1.0",
+        "serialport": "^13.0.0"
     },
     "devDependencies": {
         "electron": "^39.2.6",
@@ -38,6 +40,9 @@
         "appId": "com.andreswerkstatt.neon-meter-host",
         "artifactName": "Neon-Meter-${version}-${os}-${arch}.${ext}",
         "asar": true,
+        "asarUnpack": [
+            "node_modules/**/*.node"
+        ],
         "directories": {
             "output": "dist"
         },
@@ -49,6 +54,10 @@
             "category": "public.app-category.utilities",
             "identity": "-",
             "icon": "src/assets/neon-meter-icon.icns",
+            "extendInfo": {
+                "NSBluetoothAlwaysUsageDescription": "Neon Meter uses Bluetooth to reconnect to your CoreS3 meter and sync local usage status.",
+                "NSBluetoothPeripheralUsageDescription": "Neon Meter uses Bluetooth to reconnect to your CoreS3 meter and sync local usage status."
+            },
             "target": [
                 "dmg",
                 "zip"

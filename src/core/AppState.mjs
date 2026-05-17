@@ -8,7 +8,7 @@ import {
  * State container for the Electron host renderer.
  */
 export class AppState {
-    /** @type {{ provider: string, locale: string, settings: typeof DEFAULT_SETTINGS, ble: { connected: boolean, deviceName: string, supported: boolean }, sync: { running: boolean, lastSync: string, status: string, error: string }, payload: object | null }} */
+    /** @type {{ provider: string, locale: string, settings: typeof DEFAULT_SETTINGS, ble: { connected: boolean, connecting: boolean, deviceName: string, supported: boolean }, sync: { running: boolean, lastSync: string, status: string, error: string }, payload: object | null }} */
     #state
 
     /** @type {Set<(snapshot: ReturnType<AppState['getSnapshot']>) => void>} */
@@ -24,6 +24,7 @@ export class AppState {
             settings: { ...DEFAULT_SETTINGS, ...(initial.settings || {}) },
             ble: {
                 connected: Boolean(initial.ble?.connected),
+                connecting: Boolean(initial.ble?.connecting),
                 deviceName: String(initial.ble?.deviceName || ''),
                 supported: Boolean(initial.ble?.supported)
             },
@@ -40,7 +41,7 @@ export class AppState {
 
     /**
      * Returns an immutable state snapshot.
-     * @returns {{ provider: string, locale: string, settings: typeof DEFAULT_SETTINGS, ble: { connected: boolean, deviceName: string, supported: boolean }, sync: { running: boolean, lastSync: string, status: string, error: string }, payload: object | null }}
+     * @returns {{ provider: string, locale: string, settings: typeof DEFAULT_SETTINGS, ble: { connected: boolean, connecting: boolean, deviceName: string, supported: boolean }, sync: { running: boolean, lastSync: string, status: string, error: string }, payload: object | null }}
      */
     getSnapshot() {
         return structuredClone(this.#state)

@@ -15,9 +15,13 @@ export class AppController {
     #timers
     #syncTimer = null
     #bleReconnectTimer = null
+    #usbAutoConnectTimer = null
     #bleReconnectDelayMs = 5000
+    #usbAutoConnectDelayMs = 5000
     #skipNextBleReconnect = false
     #disposed = false
+    #activeTransport = ''
+    #allowDisconnectedUsbAutoConnect = false
 
     /**
      * @param {{
@@ -25,9 +29,10 @@ export class AppController {
      * view: import('./ui/AppView.mjs').AppView,
      * i18n?: { getLocale: () => string, setLocale: (locale: string) => Promise<void>, translate: (key: string) => string, applyToDom: (node: Document) => void } | null,
      * bridge: { getAppMeta: () => Promise<object>, loadSettings: () => Promise<object>, saveSettings: (settings: object) => Promise<object>, fetchProviderBundle: (settings?: object) => Promise<object> },
-     * bleClient: EventTarget & { isSupported: () => boolean, connect: () => Promise<{ id?: string, name: string, connected: boolean }>, connectRemembered?: (device: { id?: string, name?: string }) => Promise<{ id?: string, name: string, connected: boolean } | null>, disconnect: () => void, writePayload: (payload: object) => Promise<void> },
+     * bleClient: EventTarget & { isSupported: () => boolean, canConnectWithoutRemembered?: () => boolean, connect: () => Promise<{ id?: string, name: string, connected: boolean, transport?: string }>, connectRemembered?: (device: { id?: string, name?: string }) => Promise<{ id?: string, name: string, connected: boolean, transport?: string } | null>, disconnect: () => void, writePayload: (payload: object) => Promise<void> },
      * timers?: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout' | 'setInterval' | 'clearInterval'>,
-     * bleReconnectDelayMs?: number
+     * bleReconnectDelayMs?: number,
+     * usbAutoConnectDelayMs?: number
      * }} dependencies
      */
     constructor(dependencies) {
@@ -40,19 +45,21 @@ export class AppController {
         this.#timers = {
             setTimeout: timers.setTimeout
                 ? timers.setTimeout.bind(timers)
-                : globalThis.setTimeout,
+                : globalThis.setTimeout.bind(globalThis),
             clearTimeout: timers.clearTimeout
                 ? timers.clearTimeout.bind(timers)
-                : globalThis.clearTimeout,
+                : globalThis.clearTimeout.bind(globalThis),
             setInterval: timers.setInterval
                 ? timers.setInterval.bind(timers)
-                : globalThis.setInterval,
+                : globalThis.setInterval.bind(globalThis),
             clearInterval: timers.clearInterval
                 ? timers.clearInterval.bind(timers)
-                : globalThis.clearInterval
+                : globalThis.clearInterval.bind(globalThis)
         }
         this.#bleReconnectDelayMs =
             Number(dependencies.bleReconnectDelayMs) || 5000
+        this.#usbAutoConnectDelayMs =
+            Number(dependencies.usbAutoConnectDelayMs) || 5000
     }
 
     /**
@@ -90,6 +97,7 @@ export class AppController {
         this.#bindBle()
         this.#scheduleSync()
         void this.#connectRememberedBleDevice()
+        this.#scheduleUsbAutoConnect()
     }
 
     /**
@@ -99,6 +107,7 @@ export class AppController {
     dispose() {
         this.#disposed = true
         this.#cancelBleReconnect()
+        this.#cancelUsbAutoConnect()
         this.#skipNextBleReconnect = true
         if (this.#syncTimer) this.#timers.clearInterval(this.#syncTimer)
         this.#bleClient.disconnect()
@@ -163,12 +172,18 @@ export class AppController {
     #bindBle() {
         this.#bleClient.addEventListener('disconnected', () => {
             const wasConnected = this.#state.getSnapshot().ble.connected
-            this.#state.setValue('ble', { connected: false, deviceName: '' })
+            this.#activeTransport = ''
+            this.#state.setValue('ble', {
+                connected: false,
+                connecting: false,
+                deviceName: ''
+            })
             if (this.#skipNextBleReconnect) {
                 this.#skipNextBleReconnect = false
                 return
             }
             if (wasConnected) this.#scheduleBleReconnect()
+            this.#scheduleUsbAutoConnect()
         })
         this.#bleClient.addEventListener('refresh-requested', () =>
             this.#syncNow()
@@ -183,23 +198,40 @@ export class AppController {
     }
 
     /**
-     * Connects to the CoreS3 over BLE.
+     * Connects to the CoreS3 over the preferred device transport.
      * @returns {Promise<void>}
      */
     async #connect() {
+        const snapshot = this.#state.getSnapshot()
+        if (
+            snapshot.ble.connected ||
+            snapshot.ble.connecting ||
+            !snapshot.ble.supported
+        ) {
+            return
+        }
+
+        this.#state.patch({
+            ble: { connecting: true },
+            sync: {
+                error: '',
+                status: 'Connecting Neon Meter'
+            }
+        })
+
         try {
             this.#cancelBleReconnect()
             const device = await this.#bleClient.connect()
-            this.#state.setValue('ble', {
-                connected: true,
-                deviceName: device.name
-            })
+            this.#setConnectedDevice(device)
             await this.#rememberBleDevice(device)
             await this.#syncNow()
         } catch (error) {
-            this.#state.setValue('sync', {
-                error: errorMessage(error),
-                status: 'BLE connection failed'
+            this.#state.patch({
+                ble: { connecting: false },
+                sync: {
+                    error: errorMessage(error),
+                    status: 'Device connection failed'
+                }
             })
         }
     }
@@ -209,13 +241,19 @@ export class AppController {
      * @returns {void}
      */
     #disconnectBle() {
+        const shouldKeepUsbProbe = this.#activeTransport !== 'usb'
         this.#cancelBleReconnect()
+        this.#cancelUsbAutoConnect()
         this.#skipNextBleReconnect = true
+        this.#state.setValue('ble', { connecting: false })
         this.#bleClient.disconnect()
+        if (shouldKeepUsbProbe) {
+            this.#scheduleUsbAutoConnect({ allowDisconnected: true })
+        }
     }
 
     /**
-     * Reconnects to a persisted BLE device when the browser still has permission.
+     * Reconnects to a persisted BLE device when the BLE client can resolve it.
      * @returns {Promise<void>}
      */
     async #connectRememberedBleDevice() {
@@ -226,8 +264,16 @@ export class AppController {
             id: String(snapshot.settings.rememberedBleDeviceId || ''),
             name: String(snapshot.settings.rememberedBleDeviceName || '')
         }
+        const canAutoConnectWithoutRemembered =
+            this.#canConnectWithoutRemembered()
         if (!this.#bleClient.isSupported()) return
-        if (!rememberedDevice.id && !rememberedDevice.name) return
+        if (
+            !rememberedDevice.id &&
+            !rememberedDevice.name &&
+            !canAutoConnectWithoutRemembered
+        ) {
+            return
+        }
         if (typeof this.#bleClient.connectRemembered !== 'function') return
 
         this.#state.setValue('sync', {
@@ -240,20 +286,19 @@ export class AppController {
                 await this.#bleClient.connectRemembered(rememberedDevice)
             if (!device?.connected) {
                 this.#scheduleBleReconnect()
+                this.#scheduleUsbAutoConnect()
                 return
             }
-            this.#state.setValue('ble', {
-                connected: true,
-                deviceName: device.name
-            })
+            this.#setConnectedDevice(device)
             await this.#rememberBleDevice(device)
             await this.#syncNow()
         } catch (error) {
             this.#state.setValue('sync', {
-                status: 'BLE auto-connect failed',
+                status: 'Device auto-connect failed',
                 error: errorMessage(error)
             })
             this.#scheduleBleReconnect()
+            this.#scheduleUsbAutoConnect()
         }
     }
 
@@ -265,9 +310,11 @@ export class AppController {
         if (this.#disposed || this.#bleReconnectTimer) return
         const snapshot = this.#state.getSnapshot()
         const rememberedDevice = rememberedBleDeviceFrom(snapshot)
+        const canAutoConnectWithoutRemembered =
+            this.#canConnectWithoutRemembered()
         if (snapshot.settings.autoConnectBle === false) return
         if (snapshot.ble.connected) return
-        if (!rememberedDevice) return
+        if (!rememberedDevice && !canAutoConnectWithoutRemembered) return
         if (!this.#bleClient.isSupported()) return
         if (typeof this.#bleClient.connectRemembered !== 'function') return
 
@@ -289,9 +336,11 @@ export class AppController {
         if (this.#disposed) return
         const snapshot = this.#state.getSnapshot()
         const rememberedDevice = rememberedBleDeviceFrom(snapshot)
+        const canAutoConnectWithoutRemembered =
+            this.#canConnectWithoutRemembered()
         if (snapshot.settings.autoConnectBle === false) return
         if (snapshot.ble.connected) return
-        if (!rememberedDevice) return
+        if (!rememberedDevice && !canAutoConnectWithoutRemembered) return
         if (!this.#bleClient.isSupported()) return
         if (typeof this.#bleClient.connectRemembered !== 'function') return
 
@@ -302,14 +351,12 @@ export class AppController {
         })
 
         try {
-            const device =
-                await this.#bleClient.connectRemembered(rememberedDevice)
+            const device = await this.#bleClient.connectRemembered(
+                rememberedDevice || { id: '', name: '' }
+            )
             if (device?.connected) {
                 connected = true
-                this.#state.setValue('ble', {
-                    connected: true,
-                    deviceName: device.name
-                })
+                this.#setConnectedDevice(device)
                 await this.#rememberBleDevice(device)
                 await this.#syncNow()
             }
@@ -324,6 +371,67 @@ export class AppController {
     }
 
     /**
+     * Starts a delayed USB probe while BLE is active so cable hotplug can win.
+     * @param {{ allowDisconnected?: boolean }} [options]
+     * @returns {void}
+     */
+    #scheduleUsbAutoConnect(options = {}) {
+        if (this.#disposed || this.#usbAutoConnectTimer) return
+        const snapshot = this.#state.getSnapshot()
+        const allowDisconnected = Boolean(options.allowDisconnected)
+        if (snapshot.settings.autoConnectBle === false) return
+        if (!snapshot.ble.connected && !allowDisconnected) return
+        if (this.#activeTransport === 'usb') return
+        if (!this.#canConnectWithoutRemembered()) return
+        if (!this.#bleClient.isSupported()) return
+        if (typeof this.#bleClient.connectRemembered !== 'function') return
+
+        this.#allowDisconnectedUsbAutoConnect = allowDisconnected
+        this.#usbAutoConnectTimer = this.#timers.setTimeout(() => {
+            const retryWhileDisconnected = this.#allowDisconnectedUsbAutoConnect
+            this.#usbAutoConnectTimer = null
+            this.#allowDisconnectedUsbAutoConnect = false
+            void this.#retryUsbAutoConnect({
+                allowDisconnected: retryWhileDisconnected
+            })
+        }, this.#usbAutoConnectDelayMs)
+        this.#usbAutoConnectTimer?.unref?.()
+    }
+
+    /**
+     * Attempts one USB-only auto-connect pass and reschedules until USB wins.
+     * @param {{ allowDisconnected?: boolean }} [options]
+     * @returns {Promise<void>}
+     */
+    async #retryUsbAutoConnect(options = {}) {
+        if (this.#disposed) return
+        const snapshot = this.#state.getSnapshot()
+        const allowDisconnected = Boolean(options.allowDisconnected)
+        if (snapshot.settings.autoConnectBle === false) return
+        if (!snapshot.ble.connected && !allowDisconnected) return
+        if (this.#activeTransport === 'usb') return
+        if (!this.#canConnectWithoutRemembered()) return
+        if (!this.#bleClient.isSupported()) return
+        if (typeof this.#bleClient.connectRemembered !== 'function') return
+
+        try {
+            const device = await this.#bleClient.connectRemembered({
+                id: '',
+                name: ''
+            })
+            if (device?.connected && device.transport === 'usb') {
+                this.#setConnectedDevice(device)
+                await this.#syncNow()
+                return
+            }
+        } catch (_error) {
+            // USB may simply be absent; keep the current state and retry later.
+        }
+
+        this.#scheduleUsbAutoConnect({ allowDisconnected })
+    }
+
+    /**
      * Cancels any pending BLE reconnect attempt.
      * @returns {void}
      */
@@ -334,11 +442,39 @@ export class AppController {
     }
 
     /**
+     * Cancels any pending USB upgrade probe.
+     * @returns {void}
+     */
+    #cancelUsbAutoConnect() {
+        if (!this.#usbAutoConnectTimer) return
+        this.#timers.clearTimeout(this.#usbAutoConnectTimer)
+        this.#usbAutoConnectTimer = null
+        this.#allowDisconnectedUsbAutoConnect = false
+    }
+
+    /**
+     * Stores the active device in app state and manages USB upgrade polling.
+     * @param {{ name?: string, transport?: string }} device
+     * @returns {void}
+     */
+    #setConnectedDevice(device) {
+        this.#activeTransport = String(device?.transport || 'ble')
+        this.#state.setValue('ble', {
+            connected: true,
+            connecting: false,
+            deviceName: String(device?.name || 'Neon Meter')
+        })
+        if (this.#activeTransport === 'usb') this.#cancelUsbAutoConnect()
+        else this.#scheduleUsbAutoConnect()
+    }
+
+    /**
      * Stores the last connected BLE device metadata for startup reconnect.
      * @param {{ id?: string, name?: string }} device
      * @returns {Promise<void>}
      */
     async #rememberBleDevice(device) {
+        if (device?.transport === 'usb') return
         const remembered = {
             rememberedBleDeviceId: String(device.id || ''),
             rememberedBleDeviceName: String(device.name || '')
@@ -354,6 +490,14 @@ export class AppController {
         await this.#bridge.saveSettings(
             createPersistedSettings(this.#state.getSnapshot())
         )
+    }
+
+    /**
+     * Returns whether the current client can auto-connect without BLE metadata.
+     * @returns {boolean}
+     */
+    #canConnectWithoutRemembered() {
+        return Boolean(this.#bleClient.canConnectWithoutRemembered?.())
     }
 
     /**

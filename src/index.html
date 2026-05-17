@@ -39,13 +39,21 @@
 
             <section class="status-strip">
                 <article class="status-item">
-                    <span>BLE</span>
+                    <span>Device</span>
                     <strong id="bleState">Disconnected</strong>
                     <small id="bleDevice">Neon Meter CoreS3</small>
                 </article>
                 <article class="status-item">
                     <span>Sync</span>
-                    <strong id="syncStatus">Ready</strong>
+                    <div class="status-line" role="status" aria-live="polite">
+                        <span
+                            id="syncLoader"
+                            class="status-loader"
+                            hidden
+                            aria-hidden="true"
+                        ></span>
+                        <strong id="syncStatus">Ready</strong>
+                    </div>
                     <small>Last: <b id="lastSync">Never</b></small>
                 </article>
                 <div class="button-row">
@@ -80,7 +88,7 @@
                         <div>
                             <dt>Device</dt>
                             <dd id="bleAutomationSummary">
-                                Auto-connect latest device
+                                Auto-connect USB or latest BLE
                             </dd>
                         </div>
                     </dl>
@@ -204,12 +212,11 @@
                                 data-setting
                                 type="checkbox"
                             />
-                            <span>Auto-connect latest BLE device</span>
+                            <span>Auto-connect device</span>
                         </label>
                         <p class="note">
-                            The latest connected device is stored locally so
-                            startup can reconnect without the chooser when the
-                            browser permission is still available.
+                            USB is preferred when connected. The latest BLE
+                            device is stored locally for fallback reconnects.
                         </p>
                     </section>
 

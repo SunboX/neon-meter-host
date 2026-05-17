@@ -29,11 +29,12 @@ managed by Claude Code or Codex on the local machine.
 - [Getting started](docs/getting-started.md)
 - [Architecture](docs/architecture.md)
 - [Providers](docs/providers.md)
-- [BLE protocol](docs/ble-protocol.md)
+- [Device transport protocol](docs/ble-protocol.md)
 - [Security](docs/security.md)
 - [Testing](docs/testing.md)
 - [Troubleshooting](docs/troubleshooting.md)
 - [Host spec](specs/host-daemon.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 

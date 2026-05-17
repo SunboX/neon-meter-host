@@ -48,6 +48,47 @@ test('AppController auto-connects a remembered BLE device on startup', async () 
     controller.dispose()
 })
 
+test('AppController auto-connects USB-capable clients without remembered BLE metadata', async () => {
+    const state = new AppState()
+    const view = new FakeView()
+    const bridge = new FakeBridge({ loadSettings: { autoSync: false } })
+    const bleClient = new FakeBleClient({
+        canConnectWithoutRemembered: true,
+        rememberedDevice: {
+            id: 'usb:/dev/cu.usbmodem101',
+            name: 'Neon Meter USB',
+            connected: true,
+            transport: 'usb'
+        }
+    })
+    const controller = new AppController({
+        state,
+        view,
+        bridge,
+        bleClient
+    })
+
+    await controller.init()
+    await flushMicrotasks()
+
+    assert.deepEqual(bleClient.rememberedConnectRequests, [
+        {
+            id: '',
+            name: ''
+        }
+    ])
+    assert.equal(state.getSnapshot().ble.connected, true)
+    assert.equal(state.getSnapshot().ble.deviceName, 'Neon Meter USB')
+    assert.deepEqual(bleClient.payloads, [
+        {
+            rotationSeconds: 30,
+            providers: []
+        }
+    ])
+
+    controller.dispose()
+})
+
 test('AppController persists BLE device metadata after manual connect', async () => {
     const state = new AppState()
     const view = new FakeView()
@@ -79,6 +120,42 @@ test('AppController persists BLE device metadata after manual connect', async ()
         state.getSnapshot().settings.rememberedBleDeviceName,
         'AI Meter Lab'
     )
+
+    controller.dispose()
+})
+
+test('AppController exposes manual BLE connection progress', async () => {
+    const pendingConnection = createDeferred()
+    const state = new AppState()
+    const view = new FakeView()
+    const bridge = new FakeBridge({ loadSettings: { autoSync: false } })
+    const bleClient = new FakeBleClient({
+        manualDevicePromise: pendingConnection.promise
+    })
+    const controller = new AppController({
+        state,
+        view,
+        bridge,
+        bleClient
+    })
+
+    await controller.init()
+    const connectPromise = view.connect()
+    await flushMicrotasks()
+
+    assert.equal(state.getSnapshot().ble.connecting, true)
+    assert.equal(state.getSnapshot().sync.status, 'Connecting Neon Meter')
+
+    pendingConnection.resolve({
+        id: 'device-7',
+        name: 'AI Meter Pending',
+        connected: true
+    })
+    await connectPromise
+
+    assert.equal(state.getSnapshot().ble.connecting, false)
+    assert.equal(state.getSnapshot().ble.connected, true)
+    assert.equal(state.getSnapshot().ble.deviceName, 'AI Meter Pending')
 
     controller.dispose()
 })
@@ -116,6 +193,63 @@ test('AppController skips remembered BLE auto-connect when disabled', async () =
     assert.deepEqual(bleClient.payloads, [])
 
     controller.dispose()
+})
+
+test('AppController binds browser global timers by default', async () => {
+    const originalSetTimeout = globalThis.setTimeout
+    const originalClearTimeout = globalThis.clearTimeout
+    const originalSetInterval = globalThis.setInterval
+    const originalClearInterval = globalThis.clearInterval
+    const calls = []
+    let controller = null
+
+    globalThis.setTimeout = function (_callback, delay) {
+        assert.equal(this, globalThis)
+        calls.push(['setTimeout', delay])
+        return 1001
+    }
+    globalThis.clearTimeout = function (id) {
+        assert.equal(this, globalThis)
+        calls.push(['clearTimeout', id])
+    }
+    globalThis.setInterval = function (_callback, delay) {
+        assert.equal(this, globalThis)
+        calls.push(['setInterval', delay])
+        return 1002
+    }
+    globalThis.clearInterval = function (id) {
+        assert.equal(this, globalThis)
+        calls.push(['clearInterval', id])
+    }
+
+    try {
+        const state = new AppState()
+        const view = new FakeView()
+        const bridge = new FakeBridge({
+            loadSettings: {
+                autoSync: true,
+                autoConnectBle: false,
+                syncIntervalMinutes: 5
+            }
+        })
+        const bleClient = new FakeBleClient()
+        controller = new AppController({
+            state,
+            view,
+            bridge,
+            bleClient
+        })
+
+        await controller.init()
+
+        assert.deepEqual(calls[0], ['setInterval', 300000])
+    } finally {
+        controller?.dispose()
+        globalThis.setTimeout = originalSetTimeout
+        globalThis.clearTimeout = originalClearTimeout
+        globalThis.setInterval = originalSetInterval
+        globalThis.clearInterval = originalClearInterval
+    }
 })
 
 test('AppController retries remembered BLE startup auto-connect when unavailable', async () => {
@@ -225,6 +359,129 @@ test('AppController reconnects a remembered BLE device after connection loss', a
     assert.equal(state.getSnapshot().ble.connected, true)
     assert.equal(state.getSnapshot().ble.deviceName, 'AI Meter Desk')
     assert.equal(timers.pendingCount, 0)
+
+    controller.dispose()
+})
+
+test('AppController upgrades an active BLE connection when USB appears later', async () => {
+    const state = new AppState()
+    const view = new FakeView()
+    const bridge = new FakeBridge({
+        loadSettings: {
+            autoSync: false,
+            rememberedBleDeviceId: 'device-6',
+            rememberedBleDeviceName: 'AI Meter Wall'
+        }
+    })
+    const bleClient = new FakeBleClient({
+        canConnectWithoutRemembered: true,
+        rememberedDevices: [
+            {
+                id: 'device-6',
+                name: 'AI Meter Wall',
+                connected: true,
+                transport: 'ble'
+            },
+            {
+                id: 'usb:/dev/cu.usbmodem101',
+                name: 'Neon Meter USB',
+                connected: true,
+                transport: 'usb'
+            }
+        ]
+    })
+    const timers = new FakeTimers()
+    const controller = new AppController({
+        state,
+        view,
+        bridge,
+        bleClient,
+        timers
+    })
+
+    await controller.init()
+    await flushMicrotasks()
+
+    assert.equal(state.getSnapshot().ble.connected, true)
+    assert.equal(state.getSnapshot().ble.deviceName, 'AI Meter Wall')
+    assert.equal(timers.pendingCount, 1)
+
+    await timers.runNext()
+
+    assert.deepEqual(bleClient.rememberedConnectRequests, [
+        {
+            id: 'device-6',
+            name: 'AI Meter Wall'
+        },
+        {
+            id: '',
+            name: ''
+        }
+    ])
+    assert.equal(state.getSnapshot().ble.connected, true)
+    assert.equal(state.getSnapshot().ble.deviceName, 'Neon Meter USB')
+    assert.equal(timers.pendingCount, 0)
+
+    controller.dispose()
+})
+
+test('AppController keeps probing USB after manual BLE disconnect', async () => {
+    const state = new AppState()
+    const view = new FakeView()
+    const bridge = new FakeBridge({
+        loadSettings: {
+            autoSync: false,
+            rememberedBleDeviceId: 'device-8',
+            rememberedBleDeviceName: 'AI Meter Sideboard'
+        }
+    })
+    const bleClient = new FakeBleClient({
+        canConnectWithoutRemembered: true,
+        rememberedDevices: [
+            {
+                id: 'device-8',
+                name: 'AI Meter Sideboard',
+                connected: true,
+                transport: 'ble'
+            },
+            {
+                id: 'usb:/dev/cu.usbmodem101',
+                name: 'Neon Meter USB',
+                connected: true,
+                transport: 'usb'
+            }
+        ]
+    })
+    const timers = new FakeTimers()
+    const controller = new AppController({
+        state,
+        view,
+        bridge,
+        bleClient,
+        timers
+    })
+
+    await controller.init()
+    await flushMicrotasks()
+    await view.disconnect()
+
+    assert.equal(state.getSnapshot().ble.connected, false)
+    assert.equal(timers.pendingCount, 1)
+
+    await timers.runNext()
+
+    assert.deepEqual(bleClient.rememberedConnectRequests, [
+        {
+            id: 'device-8',
+            name: 'AI Meter Sideboard'
+        },
+        {
+            id: '',
+            name: ''
+        }
+    ])
+    assert.equal(state.getSnapshot().ble.connected, true)
+    assert.equal(state.getSnapshot().ble.deviceName, 'Neon Meter USB')
 
     controller.dispose()
 })
@@ -350,7 +607,16 @@ class FakeBleClient extends EventTarget {
         return true
     }
 
+    canConnectWithoutRemembered() {
+        return Boolean(this.options.canConnectWithoutRemembered)
+    }
+
     async connect() {
+        if (this.options.manualConnectError)
+            throw this.options.manualConnectError
+        if (this.options.manualDevicePromise) {
+            return this.options.manualDevicePromise
+        }
         return this.options.manualDevice
     }
 
@@ -410,4 +676,15 @@ async function flushMicrotasks() {
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
+}
+
+function createDeferred() {
+    let resolve = () => {}
+    let reject = () => {}
+    const promise = new Promise((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise
+        reject = rejectPromise
+    })
+
+    return { promise, resolve, reject }
 }
