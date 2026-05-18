@@ -24,7 +24,9 @@ use Web Bluetooth as a fallback for manual testing.
     "type": "hello",
     "protocol": "neon-meter-usb",
     "version": 1,
-    "device": "Neon Meter"
+    "device": "Neon Meter",
+    "firmwareVersion": "1.0.1",
+    "chipFamily": "ESP32-S3"
 }
 ```
 
@@ -61,6 +63,7 @@ JSON frames.
 - RX write characteristic: `41494d45-7465-7220-0000-000000000002`
 - TX notify/read characteristic: `41494d45-7465-7220-0000-000000000003`
 - Refresh notify characteristic: `41494d45-7465-7220-0000-000000000004`
+- Firmware metadata read characteristic: `41494d45-7465-7220-0000-000000000005`
 
 ### Flow
 
@@ -73,10 +76,12 @@ JSON frames.
 4. On app startup, BLE fallback scans for the remembered local device identity
    when auto-connect is enabled.
 5. The native BLE client subscribes to TX acknowledgements and refresh
-   requests.
-6. The host writes a provider bundle JSON payload to RX.
-7. The firmware responds on TX with `{"ack":true}` or `{"err":true}`.
-8. The main process forwards acknowledgements and refresh requests to the
+   requests. If present, it also reads the firmware metadata characteristic.
+6. The metadata characteristic returns a compact JSON object such as
+   `{"firmwareVersion":"1.0.1","chipFamily":"ESP32-S3"}`.
+7. The host writes a provider bundle JSON payload to RX.
+8. The firmware responds on TX with `{"ack":true}` or `{"err":true}`.
+9. The main process forwards acknowledgements and refresh requests to the
    renderer over IPC.
 
 ## Bundle Shape

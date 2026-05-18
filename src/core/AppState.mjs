@@ -4,11 +4,26 @@ import {
     DEFAULT_SETTINGS
 } from './AppSettings.mjs'
 
+export const DEFAULT_FIRMWARE_STATE = Object.freeze({
+    latestVersion: '',
+    latestName: '',
+    manifestUrl: '',
+    imageUrl: '',
+    chipFamily: '',
+    connectedVersion: '',
+    connectedChipFamily: '',
+    updateAvailable: false,
+    installerReady: false,
+    checking: false,
+    status: 'Firmware release not checked',
+    error: ''
+})
+
 /**
  * State container for the Electron host renderer.
  */
 export class AppState {
-    /** @type {{ provider: string, locale: string, settings: typeof DEFAULT_SETTINGS, ble: { connected: boolean, connecting: boolean, deviceName: string, supported: boolean }, sync: { running: boolean, lastSync: string, status: string, error: string }, payload: object | null }} */
+    /** @type {{ provider: string, locale: string, settings: typeof DEFAULT_SETTINGS, ble: { connected: boolean, connecting: boolean, deviceName: string, supported: boolean }, firmware: typeof DEFAULT_FIRMWARE_STATE, sync: { running: boolean, lastSync: string, status: string, error: string }, payload: object | null }} */
     #state
 
     /** @type {Set<(snapshot: ReturnType<AppState['getSnapshot']>) => void>} */
@@ -28,6 +43,10 @@ export class AppState {
                 deviceName: String(initial.ble?.deviceName || ''),
                 supported: Boolean(initial.ble?.supported)
             },
+            firmware: {
+                ...DEFAULT_FIRMWARE_STATE,
+                ...(initial.firmware || {})
+            },
             sync: {
                 running: Boolean(initial.sync?.running),
                 lastSync: String(initial.sync?.lastSync || ''),
@@ -41,7 +60,7 @@ export class AppState {
 
     /**
      * Returns an immutable state snapshot.
-     * @returns {{ provider: string, locale: string, settings: typeof DEFAULT_SETTINGS, ble: { connected: boolean, connecting: boolean, deviceName: string, supported: boolean }, sync: { running: boolean, lastSync: string, status: string, error: string }, payload: object | null }}
+     * @returns {{ provider: string, locale: string, settings: typeof DEFAULT_SETTINGS, ble: { connected: boolean, connecting: boolean, deviceName: string, supported: boolean }, firmware: typeof DEFAULT_FIRMWARE_STATE, sync: { running: boolean, lastSync: string, status: string, error: string }, payload: object | null }}
      */
     getSnapshot() {
         return structuredClone(this.#state)
@@ -49,7 +68,7 @@ export class AppState {
 
     /**
      * Sets one top-level state field.
-     * @param {'provider' | 'locale' | 'settings' | 'ble' | 'sync' | 'payload'} key
+     * @param {'provider' | 'locale' | 'settings' | 'ble' | 'firmware' | 'sync' | 'payload'} key
      * @param {unknown} value
      * @returns {ReturnType<AppState['getSnapshot']>}
      */
@@ -58,6 +77,11 @@ export class AppState {
             this.#state.settings = { ...this.#state.settings, ...(value || {}) }
         } else if (key === 'ble') {
             this.#state.ble = { ...this.#state.ble, ...(value || {}) }
+        } else if (key === 'firmware') {
+            this.#state.firmware = {
+                ...this.#state.firmware,
+                ...(value || {})
+            }
         } else if (key === 'sync') {
             this.#state.sync = { ...this.#state.sync, ...(value || {}) }
         } else if (key === 'payload') {

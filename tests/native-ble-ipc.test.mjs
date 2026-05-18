@@ -33,12 +33,26 @@ test('registerNativeBleIpc exposes native BLE handlers', async () => {
             connected: true
         }
     )
+    assert.deepEqual(
+        await ipcMain.handlers.get('ble:connect-selected')(
+            {},
+            {
+                id: 'native-3'
+            }
+        ),
+        {
+            id: 'native-3',
+            name: 'Neon Meter',
+            connected: true
+        }
+    )
     await ipcMain.handlers.get('ble:write-payload')({}, { hello: 'native' })
     await ipcMain.handlers.get('ble:disconnect')()
 
     assert.deepEqual(bleClient.calls, [
         ['connect'],
         ['connectRemembered', { id: 'native-2' }],
+        ['connectSelected', { id: 'native-3' }],
         ['writePayload', { hello: 'native' }],
         ['disconnect']
     ])
@@ -101,6 +115,15 @@ class FakeBleClient extends EventTarget {
 
     async connectRemembered(device) {
         this.calls.push(['connectRemembered', device])
+        return {
+            id: device.id,
+            name: 'Neon Meter',
+            connected: true
+        }
+    }
+
+    async connectSelected(device) {
+        this.calls.push(['connectSelected', device])
         return {
             id: device.id,
             name: 'Neon Meter',

@@ -3,6 +3,7 @@
  */
 export class AppView {
     #document
+    #bleDeviceReject = null
 
     /**
      * @param {Document} documentRef
@@ -36,6 +37,7 @@ export class AppView {
             '#payloadPreview',
             snapshot.payload ? JSON.stringify(snapshot.payload) : '{}'
         )
+        this.#renderFirmware(snapshot)
 
         this.#setValue('#localeSelect', snapshot.locale)
         this.#setChecked('#autoSyncInput', snapshot.settings.autoSync !== false)
@@ -134,6 +136,45 @@ export class AppView {
     }
 
     /**
+     * Binds firmware installer preparation.
+     * @param {() => void} callback
+     * @returns {void}
+     */
+    bindFirmwareInstallPrepare(callback) {
+        this.#button('#firmwarePrepareButton')?.addEventListener(
+            'click',
+            callback
+        )
+    }
+
+    /**
+     * Binds firmware status recheck.
+     * @param {() => void} callback
+     * @returns {void}
+     */
+    bindFirmwareRecheck(callback) {
+        this.#button('#firmwareRecheckButton')?.addEventListener(
+            'click',
+            callback
+        )
+    }
+
+    /**
+     * Binds ESP Web Tools dialog closure so normal device sync can resume.
+     * @param {(event: { reason: string, state: string }) => void} callback
+     * @returns {void}
+     */
+    bindFirmwareInstallerClosed(callback) {
+        this.#document.addEventListener?.('closed', (event) => {
+            if (!isEspWebToolsDialog(event.target)) return
+            callback({
+                reason: 'closed',
+                state: String(event.target.getAttribute?.('state') || '')
+            })
+        })
+    }
+
+    /**
      * Binds the settings dialog open button.
      * @param {() => void} callback
      * @returns {void}
@@ -202,6 +243,73 @@ export class AppView {
     }
 
     /**
+     * Opens the BLE device chooser and resolves the selected device.
+     * @param {Array<{ id?: string, name?: string, rssi?: number }>} devices
+     * @returns {Promise<{ id: string, name: string }>}
+     */
+    chooseBleDevice(devices) {
+        const candidates = normalizeBleCandidates(devices)
+        if (candidates.length === 0) {
+            return Promise.reject(new Error('No BLE devices available'))
+        }
+
+        const dialog = this.#dialog('#bleDeviceDialog')
+        const list = this.#document.querySelector('#bleDeviceList')
+        const cancelButton = this.#button('#bleDeviceCancelButton')
+        if (!dialog || !list || !cancelButton) {
+            return Promise.reject(
+                new Error('BLE device chooser is unavailable')
+            )
+        }
+
+        this.#bleDeviceReject?.(new Error('BLE device selection cancelled'))
+
+        return new Promise((resolve, reject) => {
+            const closeChooser = () => {
+                cancelButton.removeEventListener?.('click', cancelSelection)
+                dialog.removeEventListener?.('cancel', cancelDialog)
+                list.replaceChildren()
+                this.#bleDeviceReject = null
+                if (dialog.open && typeof dialog.close === 'function') {
+                    dialog.close()
+                } else {
+                    dialog.removeAttribute('open')
+                }
+            }
+            const selectDevice = (device) => {
+                closeChooser()
+                resolve({
+                    id: device.id,
+                    name: device.name
+                })
+            }
+            const cancelSelection = () => {
+                closeChooser()
+                reject(new Error('BLE device selection cancelled'))
+            }
+            const cancelDialog = (event) => {
+                event.preventDefault()
+                cancelSelection()
+            }
+
+            this.#bleDeviceReject = reject
+            list.replaceChildren(
+                ...candidates.map((device) =>
+                    this.#bleDeviceOption(device, () => selectDevice(device))
+                )
+            )
+            cancelButton.addEventListener('click', cancelSelection)
+            dialog.addEventListener?.('cancel', cancelDialog)
+
+            if (typeof dialog.showModal === 'function') {
+                dialog.showModal()
+            } else {
+                dialog.setAttribute('open', '')
+            }
+        })
+    }
+
+    /**
      * Returns current form settings.
      * @returns {object}
      */
@@ -215,6 +323,45 @@ export class AppView {
             syncIntervalMinutes: this.#number('#syncIntervalInput'),
             rotationSeconds: this.#number('#rotationSecondsInput')
         }
+    }
+
+    /**
+     * Renders firmware version and installer status.
+     * @param {{ ble?: object, firmware?: object }} snapshot
+     * @returns {void}
+     */
+    #renderFirmware(snapshot) {
+        const firmware = snapshot.firmware || {}
+        this.#setText(
+            '#firmwareConnectedVersion',
+            firmware.connectedVersion
+                ? 'v' + firmware.connectedVersion
+                : 'Unknown'
+        )
+        this.#setText(
+            '#firmwareLatestVersion',
+            firmware.latestVersion ? 'v' + firmware.latestVersion : 'Unknown'
+        )
+        this.#setText(
+            '#firmwareChipFamily',
+            firmware.chipFamily ||
+                firmware.connectedChipFamily ||
+                'M5Stack CoreS3'
+        )
+        this.#setText(
+            '#firmwareStatus',
+            firmware.status || firmwareStatusText(snapshot)
+        )
+        this.#setText('#firmwareError', firmware.error || '')
+        this.#setDisabled(
+            '#firmwarePrepareButton',
+            Boolean(firmware.checking || firmware.installerReady)
+        )
+        this.#setText(
+            '#firmwarePrepareButton',
+            firmware.installerReady ? 'Installer ready' : 'Prepare installer'
+        )
+        this.#setDisabled('#firmwareRecheckButton', Boolean(firmware.checking))
     }
 
     #button(selector) {
@@ -280,4 +427,83 @@ export class AppView {
             )?.checked
         )
     }
+
+    #bleDeviceOption(device, onSelect) {
+        const button = this.#document.createElement('button')
+        button.type = 'button'
+        button.className = 'ble-device-option'
+
+        const name = this.#document.createElement('strong')
+        name.textContent = device.name || 'Neon Meter'
+
+        const identifier = this.#document.createElement('span')
+        identifier.textContent = 'Identifier: ' + (device.id || 'Unavailable')
+
+        const rssi = this.#document.createElement('span')
+        rssi.textContent = formatRssi(device.rssi)
+
+        button.append(name, identifier, rssi)
+        button.addEventListener('click', onSelect)
+        return button
+    }
+}
+
+/**
+ * Returns BLE candidates with safe display fields.
+ * @param {unknown} devices
+ * @returns {Array<{ id: string, name: string, rssi?: number }>}
+ */
+function normalizeBleCandidates(devices) {
+    if (!Array.isArray(devices)) return []
+    return devices.map((device) => {
+        const rssi = Number(device?.rssi)
+        return {
+            id: String(device?.id || ''),
+            name: String(device?.name || 'Neon Meter'),
+            ...(Number.isFinite(rssi) ? { rssi } : {})
+        }
+    })
+}
+
+/**
+ * Formats an optional RSSI value.
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatRssi(value) {
+    const rssi = Number(value)
+    return Number.isFinite(rssi)
+        ? 'RSSI: ' + String(rssi) + ' dBm'
+        : 'RSSI unavailable'
+}
+
+/**
+ * Returns fallback firmware status copy from state fields.
+ * @param {{ ble?: object, firmware?: object }} snapshot
+ * @returns {string}
+ */
+function firmwareStatusText(snapshot) {
+    const firmware = snapshot.firmware || {}
+    if (firmware.checking) return 'Checking firmware release'
+    if (!snapshot.ble?.connected) return 'Connect a device to check firmware'
+    if (!firmware.connectedVersion) return 'Connected firmware version unknown'
+    if (firmware.updateAvailable) return 'Update available'
+    return 'Firmware up to date'
+}
+
+/**
+ * Checks whether an event came from the ESP Web Tools install dialog.
+ * @param {unknown} target
+ * @returns {boolean}
+ */
+function isEspWebToolsDialog(target) {
+    if (!target || typeof target !== 'object') return false
+    const element = /** @type {{ localName?: string, tagName?: string }} */ (
+        target
+    )
+    return (
+        String(element.localName || '').toLowerCase() ===
+            'ewt-install-dialog' ||
+        String(element.tagName || '').toLowerCase() === 'ewt-install-dialog'
+    )
 }

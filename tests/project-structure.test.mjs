@@ -94,6 +94,28 @@ test('native BLE packaging is configured for restart reconnect', async () => {
     )
 })
 
+test('firmware installer embeds ESP Web Tools and Web Serial handlers', async () => {
+    const html = await readFile(new URL('src/index.html', root), 'utf8')
+    const preload = await readFile(
+        new URL('src/electron/preload.cjs', root),
+        'utf8'
+    )
+    const main = await readFile(new URL('src/electron/main.mjs', root), 'utf8')
+
+    assert.match(html, /esp-web-tools@10/)
+    assert.match(html, /esp-web-install-button/)
+    assert.match(
+        html,
+        /https:\/\/sunbox\.github\.io\/neon-meter\/manifest\.json/
+    )
+    assert.match(main, /installSerialHandlers\(\)/)
+    assert.match(main, /select-serial-port/)
+    assert.match(main, /serial/)
+    assert.match(preload, /fetchLatestFirmwareRelease/)
+    assert.match(main, /firmware:installer-event/)
+    assert.match(preload, /onFirmwareInstallerEvent/)
+})
+
 /**
  * Verifies core npm scripts are present.
  */

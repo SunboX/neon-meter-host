@@ -10,6 +10,10 @@
             type="image/svg+xml"
         />
         <link rel="stylesheet" href="style.css" />
+        <script
+            type="module"
+            src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"
+        ></script>
     </head>
     <body class="neon-meter-app">
         <main class="app-shell">
@@ -67,6 +71,55 @@
                         Sync now
                     </button>
                 </div>
+            </section>
+
+            <section class="panel firmware-panel">
+                <div class="section-heading">
+                    <h2>Firmware</h2>
+                </div>
+                <dl class="settings-summary firmware-summary">
+                    <div>
+                        <dt>Connected</dt>
+                        <dd id="firmwareConnectedVersion">Unknown</dd>
+                    </div>
+                    <div>
+                        <dt>Latest</dt>
+                        <dd id="firmwareLatestVersion">Unknown</dd>
+                    </div>
+                    <div>
+                        <dt>Target</dt>
+                        <dd id="firmwareChipFamily">M5Stack CoreS3</dd>
+                    </div>
+                    <div>
+                        <dt>Status</dt>
+                        <dd id="firmwareStatus">
+                            Firmware release not checked
+                        </dd>
+                    </div>
+                </dl>
+                <div class="firmware-actions">
+                    <button id="firmwarePrepareButton" class="btn-secondary">
+                        Prepare installer
+                    </button>
+                    <button id="firmwareRecheckButton" class="btn-secondary">
+                        Recheck firmware
+                    </button>
+                    <esp-web-install-button
+                        manifest="https://sunbox.github.io/neon-meter/manifest.json"
+                    >
+                        <button slot="activate" class="btn-primary">
+                            Install or update
+                        </button>
+                        <span slot="unsupported" class="tool-message">
+                            Web Serial is not available in this Electron build.
+                        </span>
+                        <span slot="not-allowed" class="tool-message">
+                            Web Serial permission is required for firmware
+                            installation.
+                        </span>
+                    </esp-web-install-button>
+                </div>
+                <p id="firmwareError" class="error-line" aria-live="polite"></p>
             </section>
 
             <section class="workspace">
@@ -250,6 +303,28 @@
                     </button>
                 </footer>
             </form>
+        </dialog>
+
+        <dialog id="bleDeviceDialog" class="ble-device-dialog">
+            <section class="ble-device-card">
+                <header class="settings-card-header">
+                    <div>
+                        <p class="eyebrow">Bluetooth</p>
+                        <h2>Select Neon Meter</h2>
+                    </div>
+                    <span class="version-pill">BLE scan</span>
+                </header>
+                <div id="bleDeviceList" class="ble-device-list"></div>
+                <footer class="settings-actions">
+                    <button
+                        id="bleDeviceCancelButton"
+                        class="btn-secondary"
+                        type="button"
+                    >
+                        Cancel
+                    </button>
+                </footer>
+            </section>
         </dialog>
 
         <script type="module" src="main.mjs"></script>

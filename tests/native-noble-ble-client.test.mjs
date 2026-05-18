@@ -19,6 +19,10 @@ test('nobleBindingTypeForPlatform uses desktop-native bindings', () => {
 
 test('NativeNobleAiMeterClient connects to a remembered device by scanning', async () => {
     const rx = new FakeCharacteristic('41494d45746572200000000000000002')
+    const metadata = new FakeCharacteristic(
+        '41494d45746572200000000000000005',
+        '{"firmwareVersion":"1.0.1","chipFamily":"ESP32-S3"}'
+    )
     const noble = new FakeNoble({
         peripherals: [
             new FakePeripheral({
@@ -27,7 +31,8 @@ test('NativeNobleAiMeterClient connects to a remembered device by scanning', asy
                 characteristics: [
                     rx,
                     new FakeCharacteristic('41494d45746572200000000000000003'),
-                    new FakeCharacteristic('41494d45746572200000000000000004')
+                    new FakeCharacteristic('41494d45746572200000000000000004'),
+                    metadata
                 ]
             })
         ]
@@ -46,7 +51,9 @@ test('NativeNobleAiMeterClient connects to a remembered device by scanning', asy
     assert.deepEqual(device, {
         id: 'native-1',
         name: 'Neon Meter',
-        connected: true
+        connected: true,
+        firmwareVersion: '1.0.1',
+        chipFamily: 'ESP32-S3'
     })
     assert.equal(noble.startRequests.length, 1)
     assert.equal(noble.stopRequests, 1)
@@ -82,6 +89,33 @@ test('NativeNobleAiMeterClient reconnects when the remembered BLE id changed', a
     })
 })
 
+test('NativeNobleAiMeterClient does not auto-connect an ambiguous remembered device', async () => {
+    const noble = new FakeNoble({
+        peripherals: [
+            new FakePeripheral({
+                id: 'meter-left',
+                name: 'Neon Meter Left'
+            }),
+            new FakePeripheral({
+                id: 'meter-right',
+                name: 'Neon Meter Right'
+            })
+        ]
+    })
+    const client = new NativeNobleAiMeterClient({
+        noble,
+        scanTimeoutMs: 5,
+        discoveryRetryDelayMs: 0
+    })
+
+    const device = await client.connectRemembered({
+        id: 'remembered-missing',
+        name: 'Neon Meter Desk'
+    })
+
+    assert.equal(device, null)
+})
+
 test('NativeNobleAiMeterClient avoids filtered service discovery for native bindings', async () => {
     const peripheral = new FakePeripheral({
         id: 'native-filtered',
@@ -108,10 +142,80 @@ test('NativeNobleAiMeterClient avoids filtered service discovery for native bind
             characteristicUuids: [
                 '41494d45746572200000000000000002',
                 '41494d45746572200000000000000003',
-                '41494d45746572200000000000000004'
+                '41494d45746572200000000000000004',
+                '41494d45746572200000000000000005'
             ]
         }
     ])
+})
+
+test('NativeNobleAiMeterClient asks for selection when multiple meters are found', async () => {
+    const noble = new FakeNoble({
+        peripherals: [
+            new FakePeripheral({
+                id: 'meter-left',
+                name: 'Neon Meter Left',
+                rssi: -42
+            }),
+            new FakePeripheral({
+                id: 'meter-right',
+                name: 'Neon Meter Right',
+                rssi: -67
+            })
+        ]
+    })
+    const client = new NativeNobleAiMeterClient({
+        noble,
+        scanTimeoutMs: 5,
+        discoveryRetryDelayMs: 0
+    })
+
+    const result = await client.connect()
+
+    assert.deepEqual(result, {
+        connected: false,
+        selectionRequired: true,
+        devices: [
+            {
+                id: 'meter-left',
+                name: 'Neon Meter Left',
+                rssi: -42
+            },
+            {
+                id: 'meter-right',
+                name: 'Neon Meter Right',
+                rssi: -67
+            }
+        ]
+    })
+})
+
+test('NativeNobleAiMeterClient connects a selected meter by id', async () => {
+    const noble = new FakeNoble({
+        peripherals: [
+            new FakePeripheral({
+                id: 'meter-left',
+                name: 'Neon Meter Left'
+            }),
+            new FakePeripheral({
+                id: 'meter-right',
+                name: 'Neon Meter Right'
+            })
+        ]
+    })
+    const client = new NativeNobleAiMeterClient({
+        noble,
+        scanTimeoutMs: 5,
+        discoveryRetryDelayMs: 0
+    })
+
+    const device = await client.connectSelected({ id: 'meter-right' })
+
+    assert.deepEqual(device, {
+        id: 'meter-right',
+        name: 'Neon Meter Right',
+        connected: true
+    })
 })
 
 test('NativeNobleAiMeterClient retries unfiltered discovery when characteristics are incomplete', async () => {
@@ -144,7 +248,8 @@ test('NativeNobleAiMeterClient retries unfiltered discovery when characteristics
             characteristicUuids: [
                 '41494d45746572200000000000000002',
                 '41494d45746572200000000000000003',
-                '41494d45746572200000000000000004'
+                '41494d45746572200000000000000004',
+                '41494d45746572200000000000000005'
             ]
         },
         {
@@ -183,7 +288,8 @@ test('NativeNobleAiMeterClient retries GATT discovery while the link is connecte
             characteristicUuids: [
                 '41494d45746572200000000000000002',
                 '41494d45746572200000000000000003',
-                '41494d45746572200000000000000004'
+                '41494d45746572200000000000000004',
+                '41494d45746572200000000000000005'
             ]
         },
         {
@@ -289,6 +395,7 @@ class FakePeripheral extends EventEmitter {
         super()
         this.id = options.id || 'fake-id'
         this.address = options.address || ''
+        this.rssi = options.rssi
         this.advertisement = {
             localName: options.name || '',
             serviceUuids: options.serviceUuids || []
@@ -338,12 +445,17 @@ class FakePeripheral extends EventEmitter {
 }
 
 class FakeCharacteristic extends EventEmitter {
-    constructor(uuid) {
+    constructor(uuid, value = '') {
         super()
         this.uuid = uuid
+        this.value = value
         this.lastWrite = null
         this.lastWriteWithoutResponse = null
         this.subscribed = false
+    }
+
+    async readAsync() {
+        return Buffer.from(this.value, 'utf8')
     }
 
     async subscribeAsync() {

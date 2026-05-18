@@ -71,6 +71,19 @@ to `Neon Meter USB`.
     If this returns `Neon Meter USB`, the device, cable, and USB protocol are
     working.
 
+## Firmware Installer Cannot Open The Device
+
+- Press `Prepare installer` in the Firmware panel before starting the embedded
+  installer. This releases the host app's active USB/BLE transport so Web
+  Serial can claim the CoreS3.
+- If the installer still reports that the serial port is busy, close any other
+  serial monitor or app that may have opened the ESP32-S3 CDC port.
+- If the device is brand new or in bootloader mode, select the Espressif
+  `ESP32-S3` serial port from the installer chooser and install the published
+  Neon Meter manifest.
+- After flashing, press `Recheck firmware` or reconnect the device. Newer
+  firmware reports `firmwareVersion` and `chipFamily` over USB and BLE.
+
     If the serial port opens but no hello arrives, verify the host sets DTR high
     and RTS low. The ESP32-S3 CDC interface can expose `/dev/tty.usbmodem...`
     while still withholding serial traffic when DTR is low.

@@ -1,6 +1,6 @@
 /**
  * Registers legacy-named IPC handlers for the main-process device transport.
- * @param {{ ipcMain: Electron.IpcMain, bleClient: EventTarget & { isSupported: () => boolean, canConnectWithoutRemembered?: () => boolean, connect: () => Promise<object>, connectRemembered: (device: object) => Promise<object | null>, disconnect: () => void, writePayload: (payload: object) => Promise<void> }, getWebContents: () => Electron.WebContents[] }} dependencies
+ * @param {{ ipcMain: Electron.IpcMain, bleClient: EventTarget & { isSupported: () => boolean, canConnectWithoutRemembered?: () => boolean, connect: () => Promise<object>, connectSelected: (device: object) => Promise<object>, connectRemembered: (device: object) => Promise<object | null>, disconnect: () => void, writePayload: (payload: object) => Promise<void> }, getWebContents: () => Electron.WebContents[] }} dependencies
  * @returns {void}
  */
 export function registerNativeBleIpc(dependencies) {
@@ -13,6 +13,9 @@ export function registerNativeBleIpc(dependencies) {
         event.returnValue = Boolean(bleClient.canConnectWithoutRemembered?.())
     })
     ipcMain.handle('ble:connect', () => bleClient.connect())
+    ipcMain.handle('ble:connect-selected', (_event, device) =>
+        bleClient.connectSelected(device)
+    )
     ipcMain.handle('ble:connect-remembered', (_event, device) =>
         bleClient.connectRemembered(device)
     )

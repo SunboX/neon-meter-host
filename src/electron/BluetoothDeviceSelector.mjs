@@ -10,7 +10,7 @@ export const DEFAULT_SCAN_TIMEOUT_MS = 15000
  * Creates a Web Bluetooth device selector for Electron's scan callback flow.
  * Electron can emit the selector event before any devices have been found, so
  * empty scans must wait briefly instead of cancelling the chooser immediately.
- * @param {{ deviceNamePrefix?: string, deviceNamePrefixes?: string[], timeoutMs?: number, timers?: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout'> }} options
+ * @param {{ deviceNamePrefix?: string, deviceNamePrefixes?: string[], timeoutMs?: number, timers?: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout'>, chooseDevice?: (devices: Array<{ id: string, name: string, rssi?: number }>) => Promise<object | string | null> | object | string | null }} options
  * @returns {(event: { preventDefault: () => void }, deviceList: Array<{ deviceName?: string, deviceId?: string }>, callback: (deviceId: string) => void) => void}
  */
 export function createBluetoothDeviceSelector(options = {}) {
@@ -19,16 +19,29 @@ export function createBluetoothDeviceSelector(options = {}) {
         ? options.timeoutMs
         : DEFAULT_SCAN_TIMEOUT_MS
     const timers = options.timers || globalThis
+    const chooseDevice = options.chooseDevice
     let pendingCallback = null
     let timeoutHandle = null
 
     return function selectBluetoothDevice(event, deviceList, callback) {
         event.preventDefault()
 
-        const device = findDevice(deviceList, deviceNamePrefixes)
-        if (device?.deviceId) {
+        const devices = findSelectableDevices(deviceList, deviceNamePrefixes)
+        if (devices.length === 1 && devices[0]?.deviceId) {
             clearPending()
-            callback(device.deviceId)
+            callback(devices[0].deviceId)
+            return
+        }
+        if (devices.length > 1 && typeof chooseDevice === 'function') {
+            clearPending()
+            void chooseDevice(devices.map(deviceCandidate))
+                .then((selected) => callback(selectedDeviceId(selected)))
+                .catch(() => callback(''))
+            return
+        }
+        if (devices.length > 0 && devices[0]?.deviceId) {
+            clearPending()
+            callback(devices[0].deviceId)
             return
         }
 
@@ -54,18 +67,18 @@ export function createBluetoothDeviceSelector(options = {}) {
 }
 
 /**
- * Chooses a Neon Meter device if visible, otherwise falls back to the first
- * visible BLE device so alternate firmware names can still be tested.
+ * Returns Neon Meter devices if visible, otherwise all visible BLE devices so
+ * alternate firmware names can still be tested.
  * @param {Array<{ deviceName?: string, deviceId?: string }>} deviceList
  * @param {string[]} deviceNamePrefixes
- * @returns {{ deviceName?: string, deviceId?: string } | undefined}
+ * @returns {Array<{ deviceName?: string, deviceId?: string, rssi?: number }>}
  */
-function findDevice(deviceList, deviceNamePrefixes) {
+function findSelectableDevices(deviceList, deviceNamePrefixes) {
     const devices = Array.isArray(deviceList) ? deviceList : []
-    return (
-        devices.find((item) => matchesDeviceName(item, deviceNamePrefixes)) ||
-        devices[0]
+    const matchingDevices = devices.filter((item) =>
+        matchesDeviceName(item, deviceNamePrefixes)
     )
+    return matchingDevices.length > 0 ? matchingDevices : devices
 }
 
 /**
@@ -90,4 +103,29 @@ function deviceNamePrefixesFromOptions(options) {
 function matchesDeviceName(device, deviceNamePrefixes) {
     const deviceName = String(device.deviceName || '')
     return deviceNamePrefixes.some((prefix) => deviceName.startsWith(prefix))
+}
+
+/**
+ * Returns non-secret metadata for the selection UI.
+ * @param {{ deviceName?: string, deviceId?: string, rssi?: number }} device
+ * @returns {{ id: string, name: string, rssi?: number }}
+ */
+function deviceCandidate(device) {
+    const rssi = Number(device.rssi)
+    return {
+        id: String(device.deviceId || ''),
+        name: String(device.deviceName || 'Unnamed BLE device'),
+        ...(Number.isFinite(rssi) ? { rssi } : {})
+    }
+}
+
+/**
+ * Returns a selected Electron Bluetooth device id.
+ * @param {unknown} selected
+ * @returns {string}
+ */
+function selectedDeviceId(selected) {
+    if (typeof selected === 'string') return selected
+    if (!selected || typeof selected !== 'object') return ''
+    return String(selected.id || selected.deviceId || '')
 }

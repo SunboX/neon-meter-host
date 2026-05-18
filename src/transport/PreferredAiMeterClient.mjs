@@ -7,7 +7,7 @@ export class PreferredAiMeterClient extends EventTarget {
     #activeClient = null
 
     /**
-     * @param {{ usbClient: EventTarget & { isSupported: () => boolean, connect: () => Promise<object>, disconnect: () => void, writePayload: (payload: object) => Promise<void> }, bleClient: EventTarget & { isSupported: () => boolean, connect: () => Promise<object>, connectRemembered?: (device: object) => Promise<object | null>, disconnect: () => void, writePayload: (payload: object) => Promise<void> } }} dependencies
+     * @param {{ usbClient: EventTarget & { isSupported: () => boolean, connect: () => Promise<object>, disconnect: () => void, writePayload: (payload: object) => Promise<void> }, bleClient: EventTarget & { isSupported: () => boolean, connect: () => Promise<object>, connectSelected?: (device: object) => Promise<object>, connectRemembered?: (device: object) => Promise<object | null>, disconnect: () => void, writePayload: (payload: object) => Promise<void> } }} dependencies
      */
     constructor(dependencies) {
         super()
@@ -41,6 +41,23 @@ export class PreferredAiMeterClient extends EventTarget {
         const usbDevice = await this.#tryUsbConnect()
         if (usbDevice) return usbDevice
         const bleDevice = await this.#bleClient.connect()
+        if (bleDevice?.selectionRequired) {
+            return withTransport(bleDevice, 'ble')
+        }
+        this.#activeClient = this.#bleClient
+        return withTransport(bleDevice, 'ble')
+    }
+
+    /**
+     * Connects to a selected BLE device after manual selection.
+     * @param {{ id?: string, name?: string }} device
+     * @returns {Promise<object>}
+     */
+    async connectSelected(device) {
+        if (typeof this.#bleClient.connectSelected !== 'function') {
+            throw new Error('BLE device selection is not supported')
+        }
+        const bleDevice = await this.#bleClient.connectSelected(device)
         this.#activeClient = this.#bleClient
         return withTransport(bleDevice, 'ble')
     }

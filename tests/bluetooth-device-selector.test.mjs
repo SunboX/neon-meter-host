@@ -55,6 +55,44 @@ test('Bluetooth selector chooses a Neon Meter device before unrelated devices', 
     assert.deepEqual(callbacks, ['neon-1'])
 })
 
+test('Bluetooth selector asks the chooser when multiple meters are discovered', async () => {
+    const callbacks = []
+    const chooserCalls = []
+    const selector = createBluetoothDeviceSelector({
+        timers: createFakeTimers(),
+        timeoutMs: 1000,
+        chooseDevice: async (devices) => {
+            chooserCalls.push(devices)
+            return { id: 'neon-2' }
+        }
+    })
+
+    selector(
+        createEvent(),
+        [
+            { deviceName: 'Neon Meter Left', deviceId: 'neon-1', rssi: -45 },
+            { deviceName: 'Neon Meter Right', deviceId: 'neon-2' }
+        ],
+        (deviceId) => callbacks.push(deviceId)
+    )
+    await flushMicrotasks()
+
+    assert.deepEqual(chooserCalls, [
+        [
+            {
+                id: 'neon-1',
+                name: 'Neon Meter Left',
+                rssi: -45
+            },
+            {
+                id: 'neon-2',
+                name: 'Neon Meter Right'
+            }
+        ]
+    ])
+    assert.deepEqual(callbacks, ['neon-2'])
+})
+
 test('Bluetooth selector cancels only after the scan timeout expires', () => {
     const callbacks = []
     const timers = createFakeTimers()
@@ -100,6 +138,11 @@ function createEvent() {
             this.prevented = true
         }
     }
+}
+
+async function flushMicrotasks() {
+    await Promise.resolve()
+    await Promise.resolve()
 }
 
 /**

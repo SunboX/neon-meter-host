@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.0.3 - 2026-05-18
+
+### Added
+
+- Added a Firmware panel that checks the published Neon Meter firmware
+  manifest, compares it with connected device metadata, and embeds the ESP Web
+  Tools installer.
+- Added firmware metadata handling over native USB and BLE so connected meters
+  can report `firmwareVersion` and `chipFamily`.
+- Added native BLE multi-device selection with local identifiers and RSSI when
+  more than one Neon Meter is visible.
+- Added a reset-aware provider refresh timer so usage data refreshes near known
+  provider reset times.
+
+### Fixed
+
+- Fixed native BLE remembered reconnect behavior so it avoids choosing the wrong
+  visible meter when multiple devices are nearby.
+- Fixed firmware installation handoff by releasing the active host transport
+  before Web Serial claims the CoreS3, then resuming host reconnect afterward.
+
+### Documented
+
+- Documented the firmware metadata BLE characteristic and the USB hello metadata
+  fields.
+- Added firmware installer troubleshooting steps for busy serial ports and
+  post-flash firmware rechecks.
+
+### Validation
+
+- `npm test`
+- `npm run check:format`
+- `git diff --check`
+- `npm run dist:dir`
+
 ## 1.0.2 - 2026-05-17
 
 ### Added

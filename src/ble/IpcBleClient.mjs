@@ -36,10 +36,22 @@ export class IpcBleClient extends EventTarget {
 
     /**
      * Connects to a visible Neon Meter device.
+     * @param {{ selectDevice?: (devices: Array<{ id: string, name: string, rssi?: number }>) => Promise<object | string | null> | object | string | null }} [options]
      * @returns {Promise<{ id?: string, name: string, connected: boolean }>}
      */
-    connect() {
-        return this.#bridge.bleConnect()
+    async connect(options = {}) {
+        const device = await this.#bridge.bleConnect()
+        if (!device?.selectionRequired) return device
+        if (typeof options.selectDevice !== 'function') {
+            throw new Error('BLE device selection is required')
+        }
+
+        const selected = await options.selectDevice(device.devices || [])
+        const selectedDevice = normalizeSelectedDevice(selected)
+        if (!selectedDevice) {
+            throw new Error('BLE device selection cancelled')
+        }
+        return this.#bridge.bleConnectSelected(selectedDevice)
     }
 
     /**
@@ -90,5 +102,24 @@ export class IpcBleClient extends EventTarget {
                 detail: event.detail ?? null
             })
         )
+    }
+}
+
+/**
+ * Returns selected BLE device metadata.
+ * @param {unknown} selected
+ * @returns {{ id?: string, name?: string } | null}
+ */
+function normalizeSelectedDevice(selected) {
+    if (typeof selected === 'string') {
+        return selected ? { id: selected } : null
+    }
+    if (!selected || typeof selected !== 'object') return null
+    const id = String(selected.id || '')
+    const name = String(selected.name || '')
+    if (!id && !name) return null
+    return {
+        ...(id ? { id } : {}),
+        ...(name ? { name } : {})
     }
 }

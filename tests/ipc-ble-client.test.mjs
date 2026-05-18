@@ -22,6 +22,66 @@ test('IpcBleClient delegates BLE operations to the preload bridge', async () => 
     ])
 })
 
+test('IpcBleClient asks the renderer to choose among multiple native devices', async () => {
+    const bridge = new FakeBridge({
+        manualDevice: {
+            connected: false,
+            selectionRequired: true,
+            devices: [
+                {
+                    id: 'device-left',
+                    name: 'Neon Meter Left',
+                    rssi: -44
+                },
+                {
+                    id: 'device-right',
+                    name: 'Neon Meter Right'
+                }
+            ],
+            transport: 'ble'
+        },
+        selectedDevice: {
+            id: 'device-right',
+            name: 'Neon Meter Right',
+            connected: true,
+            transport: 'ble'
+        }
+    })
+    const client = new IpcBleClient({ bridge })
+    const chooserCalls = []
+
+    const device = await client.connect({
+        selectDevice: async (devices) => {
+            chooserCalls.push(devices)
+            return { id: 'device-right' }
+        }
+    })
+
+    assert.deepEqual(chooserCalls, [
+        [
+            {
+                id: 'device-left',
+                name: 'Neon Meter Left',
+                rssi: -44
+            },
+            {
+                id: 'device-right',
+                name: 'Neon Meter Right'
+            }
+        ]
+    ])
+    assert.deepEqual(device, {
+        id: 'device-right',
+        name: 'Neon Meter Right',
+        connected: true,
+        transport: 'ble'
+    })
+    assert.deepEqual(bridge.calls, [
+        ['connect'],
+        ['connectSelected', { id: 'device-right' }]
+    ])
+})
+
 test('IpcBleClient re-emits native BLE events', () => {
     const bridge = new FakeBridge()
     const client = new IpcBleClient({ bridge })
@@ -46,17 +106,27 @@ class FakeBridge {
     calls = []
     listener = null
 
+    constructor(options = {}) {
+        this.options = options
+    }
+
     isBleSupported() {
         return true
     }
 
     async bleConnect() {
         this.calls.push(['connect'])
+        if (this.options.manualDevice) return this.options.manualDevice
         return {
             id: 'device-1',
             name: 'Neon Meter',
             connected: true
         }
+    }
+
+    async bleConnectSelected(device) {
+        this.calls.push(['connectSelected', device])
+        return this.options.selectedDevice
     }
 
     async bleConnectRemembered(device) {

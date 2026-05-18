@@ -24,6 +24,8 @@ export class NativeUsbSerialAiMeterClient extends EventTarget {
     #closeHandler = null
     #errorHandler = null
     #heartbeatTimer = null
+    #deviceMetadata = {}
+    #lastHelloMetadata = {}
 
     /**
      * @param {{ serialportModule?: object, timers?: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout' | 'setInterval' | 'clearInterval'>, probeTimeoutMs?: number }} [options]
@@ -152,7 +154,12 @@ export class NativeUsbSerialAiMeterClient extends EventTarget {
                     port.removeListener?.('data', onData)
                     port.removeListener?.('close', onClose)
                     port.removeListener?.('error', onError)
-                    this.#adoptPort(port, portInfo, lineBuffer)
+                    this.#adoptPort(
+                        port,
+                        portInfo,
+                        lineBuffer,
+                        this.#lastHelloMetadata
+                    )
                     cleanup(true)
                 }
             }
@@ -187,12 +194,14 @@ export class NativeUsbSerialAiMeterClient extends EventTarget {
      * @param {object} port
      * @param {object} portInfo
      * @param {string} lineBuffer
+     * @param {object} metadata
      * @returns {void}
      */
-    #adoptPort(port, portInfo, lineBuffer) {
+    #adoptPort(port, portInfo, lineBuffer, metadata = {}) {
         this.#clearPort()
         this.#port = port
         this.#portInfo = portInfo
+        this.#deviceMetadata = normalizeDeviceMetadata(metadata)
         this.#lineBuffer = lineBuffer || ''
         this.#dataHandler = (chunk) => {
             this.#lineBuffer = consumeSerialLines(
@@ -225,7 +234,10 @@ export class NativeUsbSerialAiMeterClient extends EventTarget {
             return ''
         }
 
-        if (isHelloFrame(json)) return 'hello'
+        if (isHelloFrame(json)) {
+            this.#lastHelloMetadata = normalizeDeviceMetadata(json)
+            return 'hello'
+        }
         if (json.type === 'refresh-requested') {
             this.dispatchEvent(new CustomEvent('refresh-requested'))
             return 'refresh-requested'
@@ -270,6 +282,8 @@ export class NativeUsbSerialAiMeterClient extends EventTarget {
         this.#dataHandler = null
         this.#closeHandler = null
         this.#errorHandler = null
+        this.#deviceMetadata = {}
+        this.#lastHelloMetadata = {}
     }
 
     /**
@@ -318,7 +332,8 @@ export class NativeUsbSerialAiMeterClient extends EventTarget {
             id: String(this.#portInfo?.path || ''),
             name: DEVICE_NAME,
             connected: true,
-            transport: 'usb'
+            transport: 'usb',
+            ...this.#deviceMetadata
         }
     }
 }
@@ -414,6 +429,21 @@ function isHelloFrame(json) {
         json.protocol === PROTOCOL_NAME &&
         Number(json.version) === PROTOCOL_VERSION
     )
+}
+
+/**
+ * Returns non-secret firmware metadata from a device control frame.
+ * @param {unknown} source
+ * @returns {{ firmwareVersion?: string, chipFamily?: string }}
+ */
+function normalizeDeviceMetadata(source) {
+    const metadata = source && typeof source === 'object' ? source : {}
+    const firmwareVersion = String(metadata.firmwareVersion || '').trim()
+    const chipFamily = String(metadata.chipFamily || '').trim()
+    return {
+        ...(firmwareVersion ? { firmwareVersion } : {}),
+        ...(chipFamily ? { chipFamily } : {})
+    }
 }
 
 /**

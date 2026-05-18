@@ -5,6 +5,7 @@ import { AppView } from './ui/AppView.mjs'
 import { IpcBleClient } from './ble/IpcBleClient.mjs'
 import { WebBluetoothAiMeterClient } from './ble/WebBluetoothAiMeterClient.mjs'
 import { I18nService } from './I18n.mjs'
+import { fetchLatestFirmwareRelease } from './firmware/FirmwareReleaseClient.mjs'
 
 const SETTINGS_STORAGE_KEY = 'neon-meter-host-settings'
 const LEGACY_SETTINGS_STORAGE_KEY = 'ai-meter-host-settings'
@@ -50,7 +51,7 @@ function createBleClient(bridge) {
 
 /**
  * Returns the Electron preload bridge or a browser fallback for static checks.
- * @returns {{ getAppMeta: () => Promise<object>, loadSettings: () => Promise<object>, saveSettings: (settings: object) => Promise<object>, fetchProviderBundle: (settings?: object) => Promise<object> }}
+ * @returns {{ getAppMeta: () => Promise<object>, loadSettings: () => Promise<object>, saveSettings: (settings: object) => Promise<object>, fetchProviderBundle: (settings?: object) => Promise<object>, fetchLatestFirmwareRelease?: () => Promise<object | null>, onFirmwareInstallerEvent?: (callback: (event: object) => void) => (() => void) }}
  */
 function createBridge() {
     if (window.aiMeterHost) return window.aiMeterHost
@@ -100,6 +101,9 @@ function createBridge() {
             return buildProviderBundlePayload([], {
                 rotationSeconds: settings?.rotationSeconds
             })
+        },
+        async fetchLatestFirmwareRelease() {
+            return fetchLatestFirmwareRelease()
         }
     }
 }

@@ -2,6 +2,7 @@ import {
     createPersistedSettings,
     normalizePersistedSettings
 } from './core/AppSettings.mjs'
+import { compareSemver } from './firmware/FirmwareReleaseClient.mjs'
 
 /**
  * Coordinates renderer state, BLE writes, and provider refreshes.
@@ -16,20 +17,22 @@ export class AppController {
     #syncTimer = null
     #bleReconnectTimer = null
     #usbAutoConnectTimer = null
+    #resetRefreshTimer = null
     #bleReconnectDelayMs = 5000
     #usbAutoConnectDelayMs = 5000
     #skipNextBleReconnect = false
     #disposed = false
     #activeTransport = ''
     #allowDisconnectedUsbAutoConnect = false
+    #firmwareInstallerUnsubscribe = null
 
     /**
      * @param {{
      * state: import('./core/AppState.mjs').AppState,
      * view: import('./ui/AppView.mjs').AppView,
      * i18n?: { getLocale: () => string, setLocale: (locale: string) => Promise<void>, translate: (key: string) => string, applyToDom: (node: Document) => void } | null,
-     * bridge: { getAppMeta: () => Promise<object>, loadSettings: () => Promise<object>, saveSettings: (settings: object) => Promise<object>, fetchProviderBundle: (settings?: object) => Promise<object> },
-     * bleClient: EventTarget & { isSupported: () => boolean, canConnectWithoutRemembered?: () => boolean, connect: () => Promise<{ id?: string, name: string, connected: boolean, transport?: string }>, connectRemembered?: (device: { id?: string, name?: string }) => Promise<{ id?: string, name: string, connected: boolean, transport?: string } | null>, disconnect: () => void, writePayload: (payload: object) => Promise<void> },
+     * bridge: { getAppMeta: () => Promise<object>, loadSettings: () => Promise<object>, saveSettings: (settings: object) => Promise<object>, fetchProviderBundle: (settings?: object) => Promise<object>, fetchLatestFirmwareRelease?: () => Promise<object | null>, onFirmwareInstallerEvent?: (callback: (event: object) => void) => (() => void) },
+     * bleClient: EventTarget & { isSupported: () => boolean, canConnectWithoutRemembered?: () => boolean, connect: (options?: { selectDevice?: (devices: Array<{ id: string, name: string, rssi?: number }>) => Promise<object | string | null> }) => Promise<{ id?: string, name: string, connected: boolean, transport?: string }>, connectRemembered?: (device: { id?: string, name?: string }) => Promise<{ id?: string, name: string, connected: boolean, transport?: string } | null>, disconnect: () => void, writePayload: (payload: object) => Promise<void> },
      * timers?: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout' | 'setInterval' | 'clearInterval'>,
      * bleReconnectDelayMs?: number,
      * usbAutoConnectDelayMs?: number
@@ -95,6 +98,8 @@ export class AppController {
         this.#view.setVersion(String(meta.version || ''))
         this.#bindView()
         this.#bindBle()
+        this.#bindFirmwareInstallerLifecycle()
+        await this.#loadLatestFirmwareRelease()
         this.#scheduleSync()
         void this.#connectRememberedBleDevice()
         this.#scheduleUsbAutoConnect()
@@ -108,6 +113,9 @@ export class AppController {
         this.#disposed = true
         this.#cancelBleReconnect()
         this.#cancelUsbAutoConnect()
+        this.#cancelResetRefresh()
+        this.#firmwareInstallerUnsubscribe?.()
+        this.#firmwareInstallerUnsubscribe = null
         this.#skipNextBleReconnect = true
         if (this.#syncTimer) this.#timers.clearInterval(this.#syncTimer)
         this.#bleClient.disconnect()
@@ -124,6 +132,26 @@ export class AppController {
         this.#view.bindSettingsOpen(() => this.#view.openSettingsDialog())
         this.#view.bindSettingsCancel(() => this.#view.closeSettingsDialog())
         this.#view.bindSettingsSave((settings) => this.#saveSettings(settings))
+        this.#view.bindFirmwareInstallPrepare?.(() =>
+            this.#prepareFirmwareInstall()
+        )
+        this.#view.bindFirmwareRecheck?.(() => this.#recheckFirmware())
+        this.#view.bindFirmwareInstallerClosed?.((event) =>
+            this.#resumeAfterFirmwareInstaller(event)
+        )
+    }
+
+    /**
+     * Wires main-process firmware installer lifecycle events.
+     * @returns {void}
+     */
+    #bindFirmwareInstallerLifecycle() {
+        if (typeof this.#bridge.onFirmwareInstallerEvent !== 'function') return
+        this.#firmwareInstallerUnsubscribe =
+            this.#bridge.onFirmwareInstallerEvent((event) => {
+                if (event?.type !== 'serial-canceled') return
+                this.#resumeAfterFirmwareInstaller(event)
+            })
     }
 
     /**
@@ -221,7 +249,9 @@ export class AppController {
 
         try {
             this.#cancelBleReconnect()
-            const device = await this.#bleClient.connect()
+            const device = await this.#bleClient.connect({
+                selectDevice: (devices) => this.#view.chooseBleDevice(devices)
+            })
             this.#setConnectedDevice(device)
             await this.#rememberBleDevice(device)
             await this.#syncNow()
@@ -379,7 +409,8 @@ export class AppController {
         if (this.#disposed || this.#usbAutoConnectTimer) return
         const snapshot = this.#state.getSnapshot()
         const allowDisconnected = Boolean(options.allowDisconnected)
-        if (snapshot.settings.autoConnectBle === false) return
+        const force = Boolean(options.force)
+        if (snapshot.settings.autoConnectBle === false && !force) return
         if (!snapshot.ble.connected && !allowDisconnected) return
         if (this.#activeTransport === 'usb') return
         if (!this.#canConnectWithoutRemembered()) return
@@ -392,7 +423,8 @@ export class AppController {
             this.#usbAutoConnectTimer = null
             this.#allowDisconnectedUsbAutoConnect = false
             void this.#retryUsbAutoConnect({
-                allowDisconnected: retryWhileDisconnected
+                allowDisconnected: retryWhileDisconnected,
+                force
             })
         }, this.#usbAutoConnectDelayMs)
         this.#usbAutoConnectTimer?.unref?.()
@@ -407,7 +439,8 @@ export class AppController {
         if (this.#disposed) return
         const snapshot = this.#state.getSnapshot()
         const allowDisconnected = Boolean(options.allowDisconnected)
-        if (snapshot.settings.autoConnectBle === false) return
+        const force = Boolean(options.force)
+        if (snapshot.settings.autoConnectBle === false && !force) return
         if (!snapshot.ble.connected && !allowDisconnected) return
         if (this.#activeTransport === 'usb') return
         if (!this.#canConnectWithoutRemembered()) return
@@ -428,7 +461,7 @@ export class AppController {
             // USB may simply be absent; keep the current state and retry later.
         }
 
-        this.#scheduleUsbAutoConnect({ allowDisconnected })
+        this.#scheduleUsbAutoConnect({ allowDisconnected, force })
     }
 
     /**
@@ -464,8 +497,38 @@ export class AppController {
             connecting: false,
             deviceName: String(device?.name || 'Neon Meter')
         })
+        this.#setConnectedFirmware(device)
         if (this.#activeTransport === 'usb') this.#cancelUsbAutoConnect()
         else this.#scheduleUsbAutoConnect()
+    }
+
+    /**
+     * Updates firmware status from connected device metadata.
+     * @param {{ firmwareVersion?: string, chipFamily?: string }} device
+     * @returns {void}
+     */
+    #setConnectedFirmware(device) {
+        const connectedVersion = String(device?.firmwareVersion || '')
+        const connectedChipFamily = String(device?.chipFamily || '')
+        const latestVersion = this.#state.getSnapshot().firmware.latestVersion
+        const updateAvailable = Boolean(
+            latestVersion &&
+            (!connectedVersion ||
+                compareSemver(latestVersion, connectedVersion) > 0)
+        )
+        this.#state.setValue('firmware', {
+            connectedVersion,
+            connectedChipFamily,
+            updateAvailable,
+            installerReady: false,
+            status: firmwareStatus({
+                connected: true,
+                connectedVersion,
+                latestVersion,
+                updateAvailable
+            }),
+            error: ''
+        })
     }
 
     /**
@@ -520,6 +583,7 @@ export class AppController {
             if (snapshot.ble.connected) {
                 await this.#bleClient.writePayload(payload)
             }
+            this.#scheduleResetRefresh(payload)
             this.#state.patch({
                 payload,
                 sync: {
@@ -554,6 +618,156 @@ export class AppController {
             () => this.#syncNow(),
             intervalMs
         )
+        this.#syncTimer?.unref?.()
+    }
+
+    /**
+     * Schedules a one-shot refresh at the next known provider reset.
+     * @param {unknown} payload
+     * @returns {void}
+     */
+    #scheduleResetRefresh(payload) {
+        this.#cancelResetRefresh()
+        const resetMinutes = nextResetMinutes(payload)
+        if (resetMinutes === null) return
+
+        this.#resetRefreshTimer = this.#timers.setTimeout(() => {
+            this.#resetRefreshTimer = null
+            void this.#syncNow()
+        }, resetMinutes * 60000)
+        this.#resetRefreshTimer?.unref?.()
+    }
+
+    /**
+     * Cancels any pending reset-triggered provider refresh.
+     * @returns {void}
+     */
+    #cancelResetRefresh() {
+        if (!this.#resetRefreshTimer) return
+        this.#timers.clearTimeout(this.#resetRefreshTimer)
+        this.#resetRefreshTimer = null
+    }
+
+    /**
+     * Loads the latest installable firmware release metadata.
+     * @returns {Promise<void>}
+     */
+    async #loadLatestFirmwareRelease() {
+        if (typeof this.#bridge.fetchLatestFirmwareRelease !== 'function') {
+            return
+        }
+        this.#state.setValue('firmware', {
+            checking: true,
+            status: 'Checking firmware release',
+            error: ''
+        })
+        try {
+            const release = await this.#bridge.fetchLatestFirmwareRelease()
+            if (!release) {
+                this.#state.setValue('firmware', {
+                    checking: false,
+                    status: 'Firmware release not available'
+                })
+                return
+            }
+            const snapshot = this.#state.getSnapshot()
+            const latestVersion = String(release.version || '')
+            const connectedVersion = snapshot.firmware.connectedVersion
+            const updateAvailable = Boolean(
+                latestVersion &&
+                (!connectedVersion ||
+                    compareSemver(latestVersion, connectedVersion) > 0)
+            )
+            this.#state.setValue('firmware', {
+                latestVersion,
+                latestName: String(release.name || ''),
+                manifestUrl: String(release.manifestUrl || ''),
+                imageUrl: String(release.imageUrl || ''),
+                chipFamily: String(release.chipFamily || ''),
+                updateAvailable,
+                checking: false,
+                status: firmwareStatus({
+                    connected: snapshot.ble.connected,
+                    connectedVersion,
+                    latestVersion,
+                    updateAvailable
+                }),
+                error: ''
+            })
+        } catch (error) {
+            this.#state.setValue('firmware', {
+                checking: false,
+                status: 'Firmware release check failed',
+                error: errorMessage(error)
+            })
+        }
+    }
+
+    /**
+     * Rechecks latest release metadata and connected-device firmware state.
+     * @returns {Promise<void>}
+     */
+    async #recheckFirmware() {
+        await this.#loadLatestFirmwareRelease()
+        const snapshot = this.#state.getSnapshot()
+        if (!snapshot.ble.connected) return
+        this.#state.setValue('firmware', {
+            status: firmwareStatus({
+                connected: true,
+                connectedVersion: snapshot.firmware.connectedVersion,
+                latestVersion: snapshot.firmware.latestVersion,
+                updateAvailable: snapshot.firmware.updateAvailable
+            })
+        })
+    }
+
+    /**
+     * Releases the active transport so ESP Web Tools can claim Web Serial.
+     * @returns {Promise<void>}
+     */
+    async #prepareFirmwareInstall() {
+        this.#cancelBleReconnect()
+        this.#cancelUsbAutoConnect()
+        this.#skipNextBleReconnect = true
+        this.#bleClient.disconnect()
+        this.#state.patch({
+            ble: {
+                connected: false,
+                connecting: false,
+                deviceName: ''
+            },
+            firmware: {
+                installerReady: true,
+                status: 'Installer ready',
+                error: ''
+            }
+        })
+    }
+
+    /**
+     * Restores normal USB probing after ESP Web Tools releases or cancels serial.
+     * @param {object} [_event]
+     * @returns {void}
+     */
+    #resumeAfterFirmwareInstaller(_event = {}) {
+        this.#skipNextBleReconnect = false
+        this.#cancelBleReconnect()
+        this.#cancelUsbAutoConnect()
+        this.#state.patch({
+            firmware: {
+                installerReady: false,
+                status: 'Reconnecting Neon Meter over USB',
+                error: ''
+            },
+            sync: {
+                status: 'Reconnecting Neon Meter',
+                error: ''
+            }
+        })
+        this.#scheduleUsbAutoConnect({
+            allowDisconnected: true,
+            force: true
+        })
     }
 }
 
@@ -638,4 +852,36 @@ function bundleError(payload) {
     const providers = Array.isArray(payload.providers) ? payload.providers : []
     const failed = providers.find((item) => item?.ok === false)
     return failed ? String(failed.detail || '') : ''
+}
+
+/**
+ * Returns the soonest positive reset minute from a provider bundle.
+ * @param {unknown} payload
+ * @returns {number | null}
+ */
+function nextResetMinutes(payload) {
+    if (!payload || typeof payload !== 'object') return null
+    const providers = Array.isArray(payload.providers) ? payload.providers : []
+    const resetMinutes = providers.flatMap((provider) => [
+        provider?.sr,
+        provider?.wr
+    ])
+    const futureResets = resetMinutes
+        .map((value) => Number(value))
+        .filter((value) => Number.isFinite(value) && value > 0)
+
+    if (futureResets.length === 0) return null
+    return Math.min(...futureResets)
+}
+
+/**
+ * Returns user-facing firmware status text.
+ * @param {{ connected?: boolean, connectedVersion?: string, latestVersion?: string, updateAvailable?: boolean }} state
+ * @returns {string}
+ */
+function firmwareStatus(state) {
+    if (!state.latestVersion) return 'Firmware release not checked'
+    if (!state.connected) return 'Connect a device to check firmware'
+    if (!state.connectedVersion) return 'Connected firmware version unknown'
+    return state.updateAvailable ? 'Update available' : 'Firmware up to date'
 }

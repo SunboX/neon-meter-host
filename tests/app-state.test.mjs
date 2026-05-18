@@ -14,6 +14,9 @@ test('AppState initializes with defaults', () => {
     assert.equal(snapshot.ble.connecting, false)
     assert.equal(snapshot.sync.running, false)
     assert.equal(snapshot.locale, 'en')
+    assert.equal(snapshot.firmware.latestVersion, '')
+    assert.equal(snapshot.firmware.connectedVersion, '')
+    assert.equal(snapshot.firmware.updateAvailable, false)
 })
 
 /**
@@ -25,6 +28,24 @@ test('AppState.patch updates multiple fields', () => {
 
     assert.equal(snapshot.provider, 'auto')
     assert.equal(snapshot.locale, 'de')
+})
+
+/**
+ * Verifies firmware status can be patched independently.
+ */
+test('AppState.patch updates firmware status', () => {
+    const state = new AppState()
+    const snapshot = state.patch({
+        firmware: {
+            latestVersion: '1.0.1',
+            connectedVersion: '1.0.0',
+            updateAvailable: true
+        }
+    })
+
+    assert.equal(snapshot.firmware.latestVersion, '1.0.1')
+    assert.equal(snapshot.firmware.connectedVersion, '1.0.0')
+    assert.equal(snapshot.firmware.updateAvailable, true)
 })
 
 /**

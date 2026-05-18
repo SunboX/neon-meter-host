@@ -53,6 +53,61 @@ test('PreferredAiMeterClient falls back to BLE when USB is absent', async () => 
     assert.deepEqual(bleClient.payloads, [{ hello: 'ble' }])
 })
 
+test('PreferredAiMeterClient forwards BLE selection and connects the selected device', async () => {
+    const usbClient = new FakeDeviceClient({
+        connectError: new Error('No Neon Meter USB device found')
+    })
+    const bleClient = new FakeDeviceClient({
+        device: {
+            connected: false,
+            selectionRequired: true,
+            devices: [
+                {
+                    id: 'ble-left',
+                    name: 'Neon Meter Left',
+                    rssi: -40
+                },
+                {
+                    id: 'ble-right',
+                    name: 'Neon Meter Right',
+                    rssi: -70
+                }
+            ]
+        },
+        selectedDevice: {
+            id: 'ble-right',
+            name: 'Neon Meter Right',
+            connected: true
+        }
+    })
+    const client = new PreferredAiMeterClient({ usbClient, bleClient })
+
+    const selection = await client.connect()
+    const device = await client.connectSelected({ id: 'ble-right' })
+    await client.writePayload({ hello: 'selected' })
+
+    assert.deepEqual(selection, {
+        connected: false,
+        selectionRequired: true,
+        devices: [
+            {
+                id: 'ble-left',
+                name: 'Neon Meter Left',
+                rssi: -40
+            },
+            {
+                id: 'ble-right',
+                name: 'Neon Meter Right',
+                rssi: -70
+            }
+        ],
+        transport: 'ble'
+    })
+    assert.equal(device.transport, 'ble')
+    assert.deepEqual(bleClient.selectedCalls, [{ id: 'ble-right' }])
+    assert.deepEqual(bleClient.payloads, [{ hello: 'selected' }])
+})
+
 test('PreferredAiMeterClient can auto-connect USB without remembered BLE metadata', async () => {
     const usbClient = new FakeDeviceClient({
         device: {
@@ -114,6 +169,7 @@ test('PreferredAiMeterClient disconnects BLE when a later USB probe succeeds', a
 class FakeDeviceClient extends EventTarget {
     connectCalls = 0
     rememberedCalls = []
+    selectedCalls = []
     payloads = []
     disconnected = false
 
@@ -140,6 +196,11 @@ class FakeDeviceClient extends EventTarget {
     async connectRemembered(device) {
         this.rememberedCalls.push(device)
         return this.options.rememberedDevice || null
+    }
+
+    async connectSelected(device) {
+        this.selectedCalls.push(device)
+        return this.options.selectedDevice || null
     }
 
     disconnect() {

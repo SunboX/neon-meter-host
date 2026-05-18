@@ -8,7 +8,7 @@ test('NativeUsbSerialAiMeterClient connects with hello and writes payload frames
         {
             path: '/dev/cu.usbmodem101',
             manufacturer: 'Espressif',
-            hello: '{"type":"hello","protocol":"neon-meter-usb","version":1,"device":"Neon Meter"}\n'
+            hello: '{"type":"hello","protocol":"neon-meter-usb","version":1,"device":"Neon Meter","firmwareVersion":"1.0.1","chipFamily":"ESP32-S3"}\n'
         }
     ])
     const client = new NativeUsbSerialAiMeterClient({
@@ -24,7 +24,9 @@ test('NativeUsbSerialAiMeterClient connects with hello and writes payload frames
         id: '/dev/cu.usbmodem101',
         name: 'Neon Meter USB',
         connected: true,
-        transport: 'usb'
+        transport: 'usb',
+        firmwareVersion: '1.0.1',
+        chipFamily: 'ESP32-S3'
     })
     assert.equal(
         port.writes[0],

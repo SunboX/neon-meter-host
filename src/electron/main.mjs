@@ -15,11 +15,20 @@ import { NativeUsbSerialAiMeterClient } from '../usb/NativeUsbSerialAiMeterClien
 import { PreferredAiMeterClient } from '../transport/PreferredAiMeterClient.mjs'
 import { registerNativeBleIpc } from './NativeBleIpc.mjs'
 import { createProviderCredentialResolver } from './ProviderCredentials.mjs'
+import { fetchLatestFirmwareRelease } from '../firmware/FirmwareReleaseClient.mjs'
 
 const require = createRequire(import.meta.url)
 const electron = require('electron')
-const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, session } =
-    electron
+const {
+    app,
+    BrowserWindow,
+    Menu,
+    Tray,
+    dialog,
+    ipcMain,
+    nativeImage,
+    session
+} = electron
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const projectRoot = path.join(__dirname, '..', '..')
@@ -179,7 +188,9 @@ function getIconPath(fileName) {
  * @returns {void}
  */
 function installBluetoothHandlers() {
-    const selectBluetoothDevice = createBluetoothDeviceSelector()
+    const selectBluetoothDevice = createBluetoothDeviceSelector({
+        chooseDevice: chooseBluetoothDevice
+    })
 
     session.defaultSession.setPermissionRequestHandler(
         (_webContents, permission, callback) => {
@@ -197,6 +208,136 @@ function installBluetoothHandlers() {
             }
         )
     })
+}
+
+/**
+ * Installs Web Serial handlers for the embedded firmware installer.
+ * @returns {void}
+ */
+function installSerialHandlers() {
+    session.defaultSession.setDevicePermissionHandler((details) => {
+        return details.deviceType === 'serial'
+    })
+    session.defaultSession.on(
+        'select-serial-port',
+        (selectEvent, portList, webContents, callback) => {
+            selectEvent.preventDefault()
+            void chooseSerialPort(portList)
+                .then((port) => {
+                    if (!port) {
+                        notifyFirmwareInstallerEvent(webContents, {
+                            type: 'serial-canceled'
+                        })
+                    }
+                    callback(port?.portId || '')
+                })
+                .catch(() => {
+                    notifyFirmwareInstallerEvent(webContents, {
+                        type: 'serial-canceled'
+                    })
+                    callback('')
+                })
+        }
+    )
+}
+
+/**
+ * Sends firmware installer lifecycle events to the renderer.
+ * @param {{ send?: (channel: string, payload: object) => void } | null} webContents
+ * @param {object} payload
+ * @returns {void}
+ */
+function notifyFirmwareInstallerEvent(webContents, payload) {
+    webContents?.send?.('firmware:installer-event', payload)
+}
+
+/**
+ * Lets the operator choose a serial port for ESP Web Tools.
+ * @param {Array<{ portId?: string, portName?: string, displayName?: string, vendorId?: string, productId?: string }>} ports
+ * @returns {Promise<object | null>}
+ */
+async function chooseSerialPort(ports) {
+    const candidates = Array.isArray(ports) ? ports : []
+    const buttons = candidates.map(formatSerialPortButton).concat('Cancel')
+    const options = {
+        type: 'question',
+        title: 'Select firmware serial port',
+        message: 'Select the CoreS3 USB serial port for firmware installation.',
+        detail: 'Choose the Espressif or M5Stack serial device exposed by the connected meter.',
+        buttons,
+        cancelId: buttons.length - 1,
+        defaultId: 0,
+        noLink: true
+    }
+    const result = mainWindow
+        ? await dialog.showMessageBox(mainWindow, options)
+        : await dialog.showMessageBox(options)
+    return result.response >= 0 && result.response < candidates.length
+        ? candidates[result.response]
+        : null
+}
+
+/**
+ * Formats one Web Serial chooser button.
+ * @param {{ portName?: string, displayName?: string, vendorId?: string, productId?: string }} port
+ * @returns {string}
+ */
+function formatSerialPortButton(port) {
+    return [
+        String(port.displayName || port.portName || 'Serial device'),
+        'VID: ' + String(port.vendorId || 'unknown'),
+        'PID: ' + String(port.productId || 'unknown')
+    ].join(' | ')
+}
+
+/**
+ * Lets the operator choose from visible Web Bluetooth devices.
+ * @param {Array<{ id: string, name: string, rssi?: number }>} devices
+ * @returns {Promise<object | null>}
+ */
+async function chooseBluetoothDevice(devices) {
+    const buttons = devices.map(formatBluetoothDeviceButton).concat('Cancel')
+    const options = {
+        type: 'question',
+        title: 'Select Neon Meter',
+        message: 'Select the Bluetooth device to connect.',
+        detail: 'Choose the meter by local BLE identifier. RSSI is shown when Electron exposes it.',
+        buttons,
+        cancelId: buttons.length - 1,
+        defaultId: 0,
+        noLink: true
+    }
+    const result = mainWindow
+        ? await dialog.showMessageBox(mainWindow, options)
+        : await dialog.showMessageBox(options)
+    return result.response >= 0 && result.response < devices.length
+        ? devices[result.response]
+        : null
+}
+
+/**
+ * Formats one Web Bluetooth chooser button.
+ * @param {{ id?: string, name?: string, rssi?: number }} device
+ * @returns {string}
+ */
+function formatBluetoothDeviceButton(device) {
+    return [
+        String(device.name || 'Unnamed BLE device'),
+        'ID: ' + String(device.id || 'Unavailable'),
+        formatBluetoothRssi(device.rssi)
+    ].join(' | ')
+}
+
+/**
+ * Formats optional Bluetooth RSSI metadata.
+ * @param {unknown} value
+ * @returns {string}
+ */
+function formatBluetoothRssi(value) {
+    const rssi = Number(value)
+    return Number.isFinite(rssi)
+        ? 'RSSI: ' + String(rssi) + ' dBm'
+        : 'RSSI unavailable'
 }
 
 /**
@@ -219,6 +360,9 @@ function registerIpc() {
 
     ipcMain.handle('provider:fetch-bundle', async (_event, settings) => {
         return fetchProviderBundle(settings)
+    })
+    ipcMain.handle('firmware:latest-release', async () => {
+        return fetchLatestFirmwareRelease()
     })
 
     registerNativeBleIpc({
@@ -343,6 +487,7 @@ registerIpc()
 app.whenReady()
     .then(async () => {
         installBluetoothHandlers()
+        installSerialHandlers()
         const settings = await readSettings()
         await applyPersistedAutostart(settings)
         return settings

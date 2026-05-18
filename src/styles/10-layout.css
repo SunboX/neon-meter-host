@@ -207,7 +207,8 @@ h2 {
 }
 
 .settings-panel,
-.output-panel {
+.output-panel,
+.firmware-panel {
     display: grid;
     gap: 14px;
 }
@@ -238,6 +239,26 @@ h2 {
 
 .settings-panel-button {
     justify-self: start;
+}
+
+.firmware-summary {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.firmware-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.firmware-actions esp-web-install-button {
+    display: inline-flex;
+}
+
+.tool-message {
+    color: var(--warn);
+    font-size: 0.86rem;
 }
 
 .section-heading {
@@ -376,7 +397,8 @@ button:disabled {
     line-height: 1.45;
 }
 
-.settings-dialog {
+.settings-dialog,
+.ble-device-dialog {
     width: min(760px, calc(100vw - 28px));
     max-height: min(760px, calc(100vh - 28px));
     border: 1px solid rgba(0, 245, 255, 0.46);
@@ -395,17 +417,58 @@ button:disabled {
         0 20px 60px rgba(0, 0, 0, 0.58);
 }
 
-.settings-dialog::backdrop {
+.settings-dialog::backdrop,
+.ble-device-dialog::backdrop {
     background: rgba(2, 6, 12, 0.76);
     backdrop-filter: blur(4px);
 }
 
-.settings-card {
+.settings-card,
+.ble-device-card {
     display: grid;
     gap: 16px;
     max-height: inherit;
     overflow: hidden;
     padding: 18px;
+}
+
+.ble-device-dialog {
+    width: min(620px, calc(100vw - 28px));
+}
+
+.ble-device-list {
+    display: grid;
+    gap: 10px;
+    max-height: min(420px, calc(100vh - 190px));
+    overflow: auto;
+}
+
+.ble-device-option {
+    display: grid;
+    gap: 5px;
+    width: 100%;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    background: rgba(4, 11, 20, 0.74);
+    color: var(--text);
+    cursor: pointer;
+    padding: 12px;
+    text-align: left;
+}
+
+.ble-device-option:hover,
+.ble-device-option:focus-visible {
+    border-color: rgba(0, 245, 255, 0.62);
+    background: rgba(0, 245, 255, 0.1);
+}
+
+.ble-device-option strong {
+    color: var(--text);
+}
+
+.ble-device-option span {
+    color: var(--muted);
+    overflow-wrap: anywhere;
 }
 
 .settings-card-header,
@@ -486,6 +549,10 @@ button:disabled {
     }
 
     .settings-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .firmware-summary {
         grid-template-columns: 1fr;
     }
 }

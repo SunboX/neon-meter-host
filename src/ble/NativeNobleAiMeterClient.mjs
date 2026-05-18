@@ -5,6 +5,7 @@ const SERVICE_UUID = normalizeUuid('41494d45-7465-7220-0000-000000000001')
 const RX_CHAR_UUID = normalizeUuid('41494d45-7465-7220-0000-000000000002')
 const TX_CHAR_UUID = normalizeUuid('41494d45-7465-7220-0000-000000000003')
 const REFRESH_CHAR_UUID = normalizeUuid('41494d45-7465-7220-0000-000000000004')
+const METADATA_CHAR_UUID = normalizeUuid('41494d45-7465-7220-0000-000000000005')
 const DEVICE_NAME_PREFIXES = ['Neon Meter', 'AI Meter']
 
 /**
@@ -69,11 +70,33 @@ export class NativeNobleAiMeterClient extends EventTarget {
 
     /**
      * Scans for and connects to a Neon Meter device.
-     * @returns {Promise<{ id: string, name: string, connected: boolean }>}
+     * @returns {Promise<{ id: string, name: string, connected: boolean } | { connected: false, selectionRequired: true, devices: Array<{ id: string, name: string, rssi?: number }> }>}
      */
     async connect() {
-        const peripheral = await this.#findPeripheral({})
-        if (!peripheral) throw new Error('No Neon Meter BLE device found')
+        const peripherals = await this.#findAiMeterPeripherals()
+        if (peripherals.length === 0) {
+            throw new Error('No Neon Meter BLE device found')
+        }
+        if (peripherals.length === 1) {
+            return this.#connectPeripheral(peripherals[0])
+        }
+        return {
+            connected: false,
+            selectionRequired: true,
+            devices: peripherals.map(peripheralCandidate)
+        }
+    }
+
+    /**
+     * Scans for and connects to a selected Neon Meter device.
+     * @param {{ id?: string, name?: string }} selectedDevice
+     * @returns {Promise<{ id: string, name: string, connected: boolean, firmwareVersion?: string, chipFamily?: string }>}
+     */
+    async connectSelected(selectedDevice = {}) {
+        const peripheral = await this.#findSelectedPeripheral(selectedDevice)
+        if (!peripheral) {
+            throw new Error('Selected Neon Meter BLE device not found')
+        }
         return this.#connectPeripheral(peripheral)
     }
 
@@ -83,7 +106,8 @@ export class NativeNobleAiMeterClient extends EventTarget {
      * @returns {Promise<{ id: string, name: string, connected: boolean } | null>}
      */
     async connectRemembered(rememberedDevice = {}) {
-        const peripheral = await this.#findPeripheral(rememberedDevice)
+        const peripheral =
+            await this.#findRememberedPeripheral(rememberedDevice)
         return peripheral ? this.#connectPeripheral(peripheral) : null
     }
 
@@ -118,6 +142,78 @@ export class NativeNobleAiMeterClient extends EventTarget {
      * @returns {Promise<object | null>}
      */
     async #findPeripheral(rememberedDevice) {
+        const peripherals = await this.#scanPeripherals({
+            matches: (peripheral) =>
+                matchesPeripheral(peripheral, rememberedDevice),
+            stopOnFirst: true
+        })
+        return peripherals[0] || null
+    }
+
+    /**
+     * Finds a remembered peripheral without selecting the wrong visible meter.
+     * @param {{ id?: string, name?: string }} rememberedDevice
+     * @returns {Promise<object | null>}
+     */
+    async #findRememberedPeripheral(rememberedDevice) {
+        const rememberedId = String(rememberedDevice?.id || '')
+        const rememberedName = String(rememberedDevice?.name || '')
+        if (!rememberedId && !rememberedName) return this.#findPeripheral({})
+
+        const remembered = {
+            id: rememberedId,
+            name: rememberedName
+        }
+        const peripherals = await this.#scanPeripherals({
+            matches: isAiMeterPeripheral,
+            stopWhen: (peripheral) =>
+                matchesSelectedPeripheral(peripheral, remembered)
+        })
+        const exactPeripheral = peripherals.find((peripheral) =>
+            matchesSelectedPeripheral(peripheral, remembered)
+        )
+        if (exactPeripheral) return exactPeripheral
+
+        return peripherals.length === 1 ? peripherals[0] : null
+    }
+
+    /**
+     * Finds all visible Neon Meter peripherals through a bounded scan.
+     * @returns {Promise<object[]>}
+     */
+    async #findAiMeterPeripherals() {
+        return this.#scanPeripherals({
+            matches: isAiMeterPeripheral,
+            stopOnFirst: false
+        })
+    }
+
+    /**
+     * Finds a selected peripheral through a bounded scan.
+     * @param {{ id?: string, name?: string }} selectedDevice
+     * @returns {Promise<object | null>}
+     */
+    async #findSelectedPeripheral(selectedDevice) {
+        const selectedId = String(selectedDevice?.id || '')
+        const selectedName = String(selectedDevice?.name || '')
+        if (!selectedId && !selectedName) return null
+        const peripherals = await this.#scanPeripherals({
+            matches: (peripheral) =>
+                matchesSelectedPeripheral(peripheral, {
+                    id: selectedId,
+                    name: selectedName
+                }),
+            stopOnFirst: true
+        })
+        return peripherals[0] || null
+    }
+
+    /**
+     * Scans native BLE peripherals.
+     * @param {{ matches: (peripheral: object) => boolean, stopOnFirst?: boolean, stopWhen?: (peripheral: object, peripherals: object[]) => boolean }} options
+     * @returns {Promise<object[]>}
+     */
+    async #scanPeripherals(options) {
         if (!this.#noble) {
             throw new Error(
                 'Native BLE is not available' +
@@ -127,12 +223,14 @@ export class NativeNobleAiMeterClient extends EventTarget {
 
         await this.#noble.waitForPoweredOnAsync(10000)
 
+        const peripherals = []
+        const knownPeripheralIds = new Set()
         let timeoutId = null
         let settled = false
         let scanning = false
 
         return new Promise((resolve, reject) => {
-            const cleanup = async (result, error = null) => {
+            const cleanup = async (error = null) => {
                 if (settled) return
                 settled = true
                 if (timeoutId) this.#timers.clearTimeout(timeoutId)
@@ -146,23 +244,31 @@ export class NativeNobleAiMeterClient extends EventTarget {
                     reject(error)
                     return
                 }
-                resolve(result)
+                resolve(peripherals)
             }
 
             const onDiscover = (peripheral) => {
-                if (matchesPeripheral(peripheral, rememberedDevice)) {
-                    void cleanup(peripheral)
+                if (!options.matches(peripheral)) return
+                const knownId = peripheralKnownId(peripheral)
+                if (knownId && knownPeripheralIds.has(knownId)) return
+                if (knownId) knownPeripheralIds.add(knownId)
+                peripherals.push(peripheral)
+                if (
+                    options.stopOnFirst ||
+                    options.stopWhen?.(peripheral, peripherals)
+                ) {
+                    void cleanup()
                 }
             }
 
             timeoutId = this.#timers.setTimeout(() => {
-                void cleanup(null)
+                void cleanup()
             }, this.#scanTimeoutMs)
 
             this.#noble.on('discover', onDiscover)
             scanning = true
             this.#noble.startScanningAsync([], false).catch((error) => {
-                void cleanup(null, error)
+                void cleanup(error)
             })
         })
     }
@@ -202,18 +308,20 @@ export class NativeNobleAiMeterClient extends EventTarget {
         this.#tx.on?.('data', this.#txDataHandler)
         await this.#refresh.subscribeAsync()
         this.#refresh.on?.('data', this.#refreshDataHandler)
+        const metadata = await readMetadataCharacteristic(handles.metadata)
 
         return {
             id: String(peripheral.id || peripheral.address || ''),
             name: peripheralName(peripheral),
-            connected: true
+            connected: true,
+            ...metadata
         }
     }
 
     /**
      * Discovers all required Neon Meter characteristics while the link is up.
      * @param {object} peripheral
-     * @returns {Promise<{ rx: object | null, tx: object | null, refresh: object | null }>}
+     * @returns {Promise<{ rx: object | null, tx: object | null, refresh: object | null, metadata: object | null }>}
      */
     async #discoverAiMeterHandles(peripheral) {
         // Some native Noble bindings can miss custom 128-bit services when
@@ -222,15 +330,20 @@ export class NativeNobleAiMeterClient extends EventTarget {
         let handles = findAiMeterCharacteristics([])
         let lastError = null
         for (let attempt = 0; attempt < this.#discoveryAttempts; attempt += 1) {
-            const characteristicUuids =
+            const metadataAwareCharacteristicUuids =
                 attempt === 0
-                    ? [RX_CHAR_UUID, TX_CHAR_UUID, REFRESH_CHAR_UUID]
+                    ? [
+                          RX_CHAR_UUID,
+                          TX_CHAR_UUID,
+                          REFRESH_CHAR_UUID,
+                          METADATA_CHAR_UUID
+                      ]
                     : []
             try {
                 const result =
                     await peripheral.discoverSomeServicesAndCharacteristicsAsync(
                         [],
-                        characteristicUuids
+                        metadataAwareCharacteristicUuids
                     )
                 handles = findAiMeterCharacteristics(
                     result?.characteristics || []
@@ -387,6 +500,26 @@ function matchesPeripheral(peripheral, rememberedDevice = {}) {
 }
 
 /**
+ * Checks whether a scanned peripheral matches an explicitly selected device.
+ * @param {object} peripheral
+ * @param {{ id?: string, name?: string }} selectedDevice
+ * @returns {boolean}
+ */
+function matchesSelectedPeripheral(peripheral, selectedDevice = {}) {
+    const selectedId = String(selectedDevice.id || '')
+    const selectedName = String(selectedDevice.name || '')
+    const peripheralIds = [
+        peripheral?.id,
+        peripheral?.uuid,
+        peripheral?.address
+    ].map((value) => String(value || ''))
+    const localName = advertisedName(peripheral)
+
+    if (selectedId && peripheralIds.includes(selectedId)) return true
+    return Boolean(selectedName && localName === selectedName)
+}
+
+/**
  * Checks whether a peripheral advertises Neon Meter identity.
  * @param {object} peripheral
  * @returns {boolean}
@@ -418,6 +551,34 @@ function peripheralName(peripheral) {
 }
 
 /**
+ * Returns a stable local peripheral identifier when Noble exposes one.
+ * @param {object} peripheral
+ * @returns {string}
+ */
+function peripheralKnownId(peripheral) {
+    return String(
+        peripheral?.id || peripheral?.uuid || peripheral?.address || ''
+    )
+}
+
+/**
+ * Returns non-secret metadata for display in the device chooser.
+ * @param {object} peripheral
+ * @returns {{ id: string, name: string, rssi?: number }}
+ */
+function peripheralCandidate(peripheral) {
+    const candidate = {
+        id: peripheralKnownId(peripheral),
+        name: peripheralName(peripheral)
+    }
+    const rssi = Number(peripheral?.rssi ?? peripheral?.advertisement?.rssi)
+    if (Number.isFinite(rssi)) {
+        candidate.rssi = rssi
+    }
+    return candidate
+}
+
+/**
  * Returns normalized advertised service UUIDs.
  * @param {object} peripheral
  * @returns {string[]}
@@ -435,7 +596,8 @@ function findAiMeterCharacteristics(characteristics) {
     return {
         rx: findCharacteristic(characteristics, RX_CHAR_UUID),
         tx: findCharacteristic(characteristics, TX_CHAR_UUID),
-        refresh: findCharacteristic(characteristics, REFRESH_CHAR_UUID)
+        refresh: findCharacteristic(characteristics, REFRESH_CHAR_UUID),
+        metadata: findCharacteristic(characteristics, METADATA_CHAR_UUID)
     }
 }
 
@@ -466,6 +628,39 @@ function findCharacteristic(characteristics, uuid) {
             (characteristic) => normalizeUuid(characteristic?.uuid) === uuid
         ) || null
     )
+}
+
+/**
+ * Reads optional BLE firmware metadata from newer Neon Meter firmware.
+ * @param {{ readAsync?: () => Promise<Buffer | Uint8Array | string> } | null} characteristic
+ * @returns {Promise<{ firmwareVersion?: string, chipFamily?: string }>}
+ */
+async function readMetadataCharacteristic(characteristic) {
+    if (typeof characteristic?.readAsync !== 'function') return {}
+    try {
+        const value = await characteristic.readAsync()
+        const text = Buffer.isBuffer(value)
+            ? value.toString('utf8')
+            : String(value || '')
+        return normalizeDeviceMetadata(JSON.parse(text))
+    } catch (_error) {
+        return {}
+    }
+}
+
+/**
+ * Returns non-secret firmware metadata from a BLE metadata payload.
+ * @param {unknown} source
+ * @returns {{ firmwareVersion?: string, chipFamily?: string }}
+ */
+function normalizeDeviceMetadata(source) {
+    const metadata = source && typeof source === 'object' ? source : {}
+    const firmwareVersion = String(metadata.firmwareVersion || '').trim()
+    const chipFamily = String(metadata.chipFamily || '').trim()
+    return {
+        ...(firmwareVersion ? { firmwareVersion } : {}),
+        ...(chipFamily ? { chipFamily } : {})
+    }
 }
 
 /**
