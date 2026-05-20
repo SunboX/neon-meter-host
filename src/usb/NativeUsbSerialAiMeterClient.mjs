@@ -88,16 +88,14 @@ export class NativeUsbSerialAiMeterClient extends EventTarget {
 
     /**
      * Disconnects the active USB serial port.
-     * @returns {void}
+     * @returns {Promise<void>}
      */
-    disconnect() {
+    async disconnect() {
         const port = this.#port
         if (!port) return
         this.#clearPort()
+        await closePort(port)
         this.dispatchEvent(new CustomEvent('disconnected'))
-        if (typeof port.close === 'function') {
-            port.close(() => {})
-        }
     }
 
     /**
@@ -485,11 +483,17 @@ function configurePortSignals(port) {
 /**
  * Closes a serialport instance while ignoring close errors.
  * @param {{ close?: (callback?: (error?: Error | null) => void) => void }} port
- * @returns {void}
+ * @returns {Promise<void>}
  */
 function closePort(port) {
-    if (typeof port.close !== 'function') return
-    port.close(() => {})
+    if (typeof port.close !== 'function') return Promise.resolve()
+    return new Promise((resolve) => {
+        try {
+            port.close(() => resolve())
+        } catch (_error) {
+            resolve()
+        }
+    })
 }
 
 /**

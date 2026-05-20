@@ -99,6 +99,10 @@ test('AppView renders firmware status and binds installer actions', () => {
     const calls = []
 
     view.bindFirmwareInstallPrepare(() => calls.push('prepare'))
+    view.bindFirmwareInstall(() => {
+        calls.push('auto-prepare')
+        return true
+    })
     view.bindFirmwareRecheck(() => calls.push('recheck'))
     view.bindFirmwareInstallerClosed(() => calls.push('closed'))
     view.render({
@@ -151,13 +155,14 @@ test('AppView renders firmware status and binds installer actions', () => {
     assert.equal(document.node('#firmwarePrepareButton').disabled, false)
 
     document.node('#firmwarePrepareButton').click()
+    document.node('#firmwareInstallButton').click()
     document.node('#firmwareRecheckButton').click()
     document.dispatchEvent({
         type: 'closed',
         target: document.createElement('ewt-install-dialog')
     })
 
-    assert.deepEqual(calls, ['prepare', 'recheck', 'closed'])
+    assert.deepEqual(calls, ['prepare', 'auto-prepare', 'recheck', 'closed'])
 })
 
 test('AppView disables installer preparation while firmware status checks', () => {
@@ -208,6 +213,117 @@ test('AppView disables installer preparation while firmware status checks', () =
     )
 })
 
+test('AppView enables firmware installation before installer is prepared', () => {
+    const document = createFakeDocument()
+    const view = new AppView(document)
+    const snapshot = {
+        provider: 'auto',
+        locale: 'en',
+        settings: {
+            autoSync: true,
+            autoConnectBle: true,
+            startAtLogin: false,
+            startHidden: false,
+            syncIntervalMinutes: 5,
+            rotationSeconds: 30,
+            rememberedBleDeviceName: ''
+        },
+        ble: {
+            connected: true,
+            connecting: false,
+            deviceName: 'Neon Meter USB',
+            supported: true
+        },
+        firmware: {
+            connectedVersion: '1.0.2',
+            latestVersion: '1.0.3',
+            chipFamily: 'ESP32-S3',
+            updateAvailable: true,
+            installerReady: false,
+            checking: false,
+            status: 'Update available',
+            error: ''
+        },
+        sync: {
+            running: false,
+            status: 'Ready',
+            error: '',
+            lastSync: ''
+        },
+        payload: null
+    }
+
+    view.render(snapshot)
+    assert.equal(document.node('#firmwareInstallButton').disabled, false)
+
+    view.render({
+        ...snapshot,
+        firmware: {
+            ...snapshot.firmware,
+            installerReady: true,
+            status: 'Installer ready'
+        }
+    })
+    assert.equal(document.node('#firmwareInstallButton').disabled, false)
+})
+
+test('AppView auto-prepares before opening firmware installer', async () => {
+    const document = createFakeDocument()
+    const view = new AppView(document)
+    const calls = []
+
+    view.bindFirmwareInstallPrepare(async () => {
+        calls.push('manual-prepare')
+        return true
+    })
+    view.bindFirmwareInstall(async () => {
+        calls.push('auto-prepare')
+        return true
+    })
+    view.render({
+        provider: 'auto',
+        locale: 'en',
+        settings: {
+            autoSync: true,
+            autoConnectBle: true,
+            startAtLogin: false,
+            startHidden: false,
+            syncIntervalMinutes: 5,
+            rotationSeconds: 30,
+            rememberedBleDeviceName: ''
+        },
+        ble: {
+            connected: true,
+            connecting: false,
+            deviceName: 'Neon Meter USB',
+            supported: true
+        },
+        firmware: {
+            connectedVersion: '1.0.2',
+            latestVersion: '1.0.3',
+            chipFamily: 'ESP32-S3',
+            updateAvailable: true,
+            installerReady: false,
+            checking: false,
+            status: 'Update available',
+            error: ''
+        },
+        sync: {
+            running: false,
+            status: 'Ready',
+            error: '',
+            lastSync: ''
+        },
+        payload: null
+    })
+
+    document.node('#firmwareInstallButton').click()
+    await flushMicrotasks()
+
+    assert.deepEqual(calls, ['auto-prepare'])
+    assert.equal(document.node('#firmwareInstallButton').defaultClicks, 1)
+})
+
 /**
  * Creates a minimal document with all nodes AppView writes during render.
  * @returns {FakeDocument}
@@ -241,6 +357,7 @@ function createFakeDocument() {
         '#firmwareError',
         '#firmwarePrepareButton',
         '#firmwareRecheckButton',
+        '#firmwareInstallButton',
         '#bleDeviceDialog',
         '#bleDeviceList',
         '#bleDeviceCancelButton'
@@ -324,6 +441,7 @@ class FakeElement {
     children = []
     className = ''
     type = ''
+    defaultClicks = 0
 
     constructor(options = {}) {
         this.#document = options.document
@@ -360,9 +478,22 @@ class FakeElement {
     }
 
     click() {
-        for (const callback of this.#listeners.get('click') || []) {
-            callback({ preventDefault() {} })
+        let defaultPrevented = false
+        let stopped = false
+        const event = {
+            preventDefault() {
+                defaultPrevented = true
+            },
+            stopPropagation() {},
+            stopImmediatePropagation() {
+                stopped = true
+            }
         }
+        for (const callback of this.#listeners.get('click') || []) {
+            callback(event)
+            if (stopped) break
+        }
+        if (!defaultPrevented) this.defaultClicks += 1
     }
 
     showModal() {
@@ -385,4 +516,10 @@ class FakeElement {
         if (name === 'open') this.open = false
         else delete this[name]
     }
+}
+
+async function flushMicrotasks() {
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
 }

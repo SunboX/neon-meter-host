@@ -32,7 +32,7 @@ export class AppController {
      * view: import('./ui/AppView.mjs').AppView,
      * i18n?: { getLocale: () => string, setLocale: (locale: string) => Promise<void>, translate: (key: string) => string, applyToDom: (node: Document) => void } | null,
      * bridge: { getAppMeta: () => Promise<object>, loadSettings: () => Promise<object>, saveSettings: (settings: object) => Promise<object>, fetchProviderBundle: (settings?: object) => Promise<object>, fetchLatestFirmwareRelease?: () => Promise<object | null>, onFirmwareInstallerEvent?: (callback: (event: object) => void) => (() => void) },
-     * bleClient: EventTarget & { isSupported: () => boolean, canConnectWithoutRemembered?: () => boolean, connect: (options?: { selectDevice?: (devices: Array<{ id: string, name: string, rssi?: number }>) => Promise<object | string | null> }) => Promise<{ id?: string, name: string, connected: boolean, transport?: string }>, connectRemembered?: (device: { id?: string, name?: string }) => Promise<{ id?: string, name: string, connected: boolean, transport?: string } | null>, disconnect: () => void, writePayload: (payload: object) => Promise<void> },
+     * bleClient: EventTarget & { isSupported: () => boolean, canConnectWithoutRemembered?: () => boolean, connect: (options?: { selectDevice?: (devices: Array<{ id: string, name: string, rssi?: number }>) => Promise<object | string | null> }) => Promise<{ id?: string, name: string, connected: boolean, transport?: string }>, connectRemembered?: (device: { id?: string, name?: string }) => Promise<{ id?: string, name: string, connected: boolean, transport?: string } | null>, disconnect: () => void | Promise<void>, writePayload: (payload: object) => Promise<void> },
      * timers?: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout' | 'setInterval' | 'clearInterval'>,
      * bleReconnectDelayMs?: number,
      * usbAutoConnectDelayMs?: number
@@ -135,6 +135,7 @@ export class AppController {
         this.#view.bindFirmwareInstallPrepare?.(() =>
             this.#prepareFirmwareInstall()
         )
+        this.#view.bindFirmwareInstall?.(() => this.#prepareFirmwareInstall())
         this.#view.bindFirmwareRecheck?.(() => this.#recheckFirmware())
         this.#view.bindFirmwareInstallerClosed?.((event) =>
             this.#resumeAfterFirmwareInstaller(event)
@@ -723,13 +724,28 @@ export class AppController {
 
     /**
      * Releases the active transport so ESP Web Tools can claim Web Serial.
-     * @returns {Promise<void>}
+     * @returns {Promise<boolean>}
      */
     async #prepareFirmwareInstall() {
         this.#cancelBleReconnect()
         this.#cancelUsbAutoConnect()
         this.#skipNextBleReconnect = true
-        this.#bleClient.disconnect()
+        this.#state.setValue('firmware', {
+            installerReady: false,
+            status: 'Releasing firmware serial port',
+            error: ''
+        })
+        try {
+            await this.#bleClient.disconnect()
+        } catch (error) {
+            this.#skipNextBleReconnect = false
+            this.#state.setValue('firmware', {
+                installerReady: false,
+                status: 'Installer preparation failed',
+                error: errorMessage(error)
+            })
+            return false
+        }
         this.#state.patch({
             ble: {
                 connected: false,
@@ -742,6 +758,7 @@ export class AppController {
                 error: ''
             }
         })
+        return true
     }
 
     /**

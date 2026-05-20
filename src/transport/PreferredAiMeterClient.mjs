@@ -5,9 +5,10 @@ export class PreferredAiMeterClient extends EventTarget {
     #usbClient
     #bleClient
     #activeClient = null
+    #disconnectingClient = null
 
     /**
-     * @param {{ usbClient: EventTarget & { isSupported: () => boolean, connect: () => Promise<object>, disconnect: () => void, writePayload: (payload: object) => Promise<void> }, bleClient: EventTarget & { isSupported: () => boolean, connect: () => Promise<object>, connectSelected?: (device: object) => Promise<object>, connectRemembered?: (device: object) => Promise<object | null>, disconnect: () => void, writePayload: (payload: object) => Promise<void> } }} dependencies
+     * @param {{ usbClient: EventTarget & { isSupported: () => boolean, connect: () => Promise<object>, disconnect: () => void | Promise<void>, writePayload: (payload: object) => Promise<void> }, bleClient: EventTarget & { isSupported: () => boolean, connect: () => Promise<object>, connectSelected?: (device: object) => Promise<object>, connectRemembered?: (device: object) => Promise<object | null>, disconnect: () => void | Promise<void>, writePayload: (payload: object) => Promise<void> } }} dependencies
      */
     constructor(dependencies) {
         super()
@@ -81,11 +82,18 @@ export class PreferredAiMeterClient extends EventTarget {
 
     /**
      * Disconnects the active transport.
-     * @returns {void}
+     * @returns {Promise<void>}
      */
     disconnect() {
-        this.#activeClient?.disconnect()
+        const activeClient = this.#activeClient
+        if (!activeClient) return Promise.resolve()
+        this.#disconnectingClient = activeClient
         this.#activeClient = null
+        return Promise.resolve(activeClient.disconnect()).finally(() => {
+            if (this.#disconnectingClient === activeClient) {
+                this.#disconnectingClient = null
+            }
+        })
     }
 
     /**
@@ -127,8 +135,13 @@ export class PreferredAiMeterClient extends EventTarget {
     #forwardClientEvents(client) {
         for (const eventName of ['ack', 'refresh-requested', 'disconnected']) {
             client.addEventListener(eventName, (event) => {
-                if (client !== this.#activeClient) return
-                if (eventName === 'disconnected') this.#activeClient = null
+                const isActive = client === this.#activeClient
+                const isDisconnecting = client === this.#disconnectingClient
+                if (!isActive && !isDisconnecting) return
+                if (eventName === 'disconnected') {
+                    if (isActive) this.#activeClient = null
+                    if (isDisconnecting) this.#disconnectingClient = null
+                }
                 this.dispatchEvent(
                     new CustomEvent(eventName, {
                         detail: event.detail ?? null

@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.4 - 2026-05-20
+
+### Fixed
+
+- Fixed firmware update handoff so the host waits for native USB serial close
+  completion before ESP Web Tools claims the CoreS3 port.
+- Fixed the firmware update flow so clicking `Install or update`
+  automatically releases the active host transport before opening the Web
+  Serial installer.
+- Added installer-flow regression coverage for USB serial close timing,
+  preferred transport disconnects, controller preparation state, and the
+  automatic install action.
+
+### Validation
+
+- `npm test`
+- `npm run format`
+- `npm run dist:dir`
+- Real CoreS3 USB validation on `/dev/tty.usbmodem1401`, including direct
+  serial reopen after host release.
+
 ## 1.0.3 - 2026-05-18
 
 ### Added

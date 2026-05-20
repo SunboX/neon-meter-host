@@ -4,6 +4,9 @@
 export class AppView {
     #document
     #bleDeviceReject = null
+    #firmwareInstallerReady = false
+    #firmwareInstallPreparing = false
+    #firmwareInstallBypass = false
 
     /**
      * @param {Document} documentRef
@@ -145,6 +148,43 @@ export class AppView {
             'click',
             callback
         )
+    }
+
+    /**
+     * Binds firmware installation with automatic port release before opening.
+     * @param {() => boolean | Promise<boolean>} callback
+     * @returns {void}
+     */
+    bindFirmwareInstall(callback) {
+        const button = this.#button('#firmwareInstallButton')
+        if (!button) return
+        button.addEventListener('click', async (event) => {
+            if (this.#firmwareInstallBypass || this.#firmwareInstallerReady) {
+                this.#firmwareInstallBypass = false
+                return
+            }
+            event.preventDefault?.()
+            event.stopPropagation?.()
+            event.stopImmediatePropagation?.()
+            if (this.#firmwareInstallPreparing) return
+
+            this.#firmwareInstallPreparing = true
+            button.disabled = true
+            button.textContent = 'Preparing installer'
+            const prepared = await callback()
+            this.#firmwareInstallPreparing = false
+            if (prepared === false) {
+                button.disabled = false
+                button.textContent = 'Install or update'
+                return
+            }
+
+            this.#firmwareInstallerReady = true
+            button.disabled = false
+            button.textContent = 'Install or update'
+            this.#firmwareInstallBypass = true
+            button.click()
+        })
     }
 
     /**
@@ -332,6 +372,7 @@ export class AppView {
      */
     #renderFirmware(snapshot) {
         const firmware = snapshot.firmware || {}
+        this.#firmwareInstallerReady = Boolean(firmware.installerReady)
         this.#setText(
             '#firmwareConnectedVersion',
             firmware.connectedVersion
@@ -356,6 +397,16 @@ export class AppView {
         this.#setDisabled(
             '#firmwarePrepareButton',
             Boolean(firmware.checking || firmware.installerReady)
+        )
+        this.#setDisabled(
+            '#firmwareInstallButton',
+            Boolean(firmware.checking || this.#firmwareInstallPreparing)
+        )
+        this.#setText(
+            '#firmwareInstallButton',
+            this.#firmwareInstallPreparing
+                ? 'Preparing installer'
+                : 'Install or update'
         )
         this.#setText(
             '#firmwarePrepareButton',

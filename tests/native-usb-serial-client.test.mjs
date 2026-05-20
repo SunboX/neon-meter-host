@@ -170,6 +170,41 @@ test('NativeUsbSerialAiMeterClient sends and stops heartbeat frames', async () =
     assert.equal(port.writes.length, writeCount)
 })
 
+test('NativeUsbSerialAiMeterClient waits for serial close before disconnect resolves', async () => {
+    const closeGate = createDeferred()
+    const serialportModule = createFakeSerialportModule([
+        {
+            path: '/dev/cu.usbmodem101',
+            manufacturer: 'Espressif',
+            hello: '{"type":"hello","protocol":"neon-meter-usb","version":1,"device":"Neon Meter"}\n',
+            closePromise: closeGate.promise
+        }
+    ])
+    const client = new NativeUsbSerialAiMeterClient({
+        serialportModule,
+        probeTimeoutMs: 20
+    })
+    const events = []
+    client.addEventListener('disconnected', () =>
+        events.push({ disconnected: true })
+    )
+
+    await client.connect()
+    const port = serialportModule.instances[0]
+    const disconnectPromise = client.disconnect()
+    await flushMicrotasks()
+
+    assert.equal(port.closeRequested, true)
+    assert.equal(port.closed, false)
+    assert.deepEqual(events, [])
+
+    closeGate.resolve()
+    await disconnectPromise
+
+    assert.equal(port.closed, true)
+    assert.deepEqual(events, [{ disconnected: true }])
+})
+
 function createFakeSerialportModule(fixtures) {
     const fixtureByPath = new Map(
         fixtures.map((fixture) => [fixture.path, fixture])
@@ -191,6 +226,7 @@ function createFakeSerialportModule(fixtures) {
             this.fixture = fixtureByPath.get(options.path) || {}
             this.writes = []
             this.closed = false
+            this.closeRequested = false
             module.instances.push(this)
         }
 
@@ -219,8 +255,16 @@ function createFakeSerialportModule(fixtures) {
         }
 
         close(callback) {
-            this.closed = true
-            queueMicrotask(() => callback?.(null))
+            this.closeRequested = true
+            const finish = () => {
+                this.closed = true
+                callback?.(null)
+            }
+            if (this.fixture.closePromise) {
+                this.fixture.closePromise.then(finish, finish)
+                return
+            }
+            queueMicrotask(finish)
         }
     }
 
@@ -258,4 +302,19 @@ class FakeTimers {
         const callback = this.#intervals.values().next().value
         if (callback) await callback()
     }
+}
+
+function createDeferred() {
+    let resolve = () => {}
+    let reject = () => {}
+    const promise = new Promise((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise
+        reject = rejectPromise
+    })
+    return { promise, resolve, reject }
+}
+
+async function flushMicrotasks() {
+    await Promise.resolve()
+    await Promise.resolve()
 }

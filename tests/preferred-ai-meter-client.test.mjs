@@ -166,6 +166,38 @@ test('PreferredAiMeterClient disconnects BLE when a later USB probe succeeds', a
     assert.equal(usbClient.connectCalls, 2)
 })
 
+test('PreferredAiMeterClient waits for active transport disconnect to finish', async () => {
+    const disconnectGate = createDeferred()
+    const usbClient = new FakeDeviceClient({
+        device: {
+            id: 'usb:/dev/cu.usbmodem101',
+            name: 'Neon Meter USB',
+            connected: true,
+            transport: 'usb'
+        },
+        disconnectPromise: disconnectGate.promise
+    })
+    const bleClient = new FakeDeviceClient()
+    const client = new PreferredAiMeterClient({ usbClient, bleClient })
+
+    await client.connect()
+
+    let disconnectFinished = false
+    const disconnectPromise = client.disconnect()
+    Promise.resolve(disconnectPromise).then(() => {
+        disconnectFinished = true
+    })
+    await flushMicrotasks()
+
+    assert.equal(usbClient.disconnected, true)
+    assert.equal(disconnectFinished, false)
+
+    disconnectGate.resolve()
+    await disconnectPromise
+
+    assert.equal(disconnectFinished, true)
+})
+
 class FakeDeviceClient extends EventTarget {
     connectCalls = 0
     rememberedCalls = []
@@ -205,9 +237,25 @@ class FakeDeviceClient extends EventTarget {
 
     disconnect() {
         this.disconnected = true
+        return this.options.disconnectPromise
     }
 
     async writePayload(payload) {
         this.payloads.push(payload)
     }
+}
+
+function createDeferred() {
+    let resolve = () => {}
+    let reject = () => {}
+    const promise = new Promise((resolvePromise, rejectPromise) => {
+        resolve = resolvePromise
+        reject = rejectPromise
+    })
+    return { promise, resolve, reject }
+}
+
+async function flushMicrotasks() {
+    await Promise.resolve()
+    await Promise.resolve()
 }

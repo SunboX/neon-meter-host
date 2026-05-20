@@ -729,6 +729,42 @@ test('AppController prepares installer by disconnecting the active transport', a
     assert.equal(state.getSnapshot().firmware.status, 'Installer ready')
 })
 
+test('AppController waits for active transport release before enabling installer', async () => {
+    const disconnectGate = createDeferred()
+    const state = new AppState({
+        ble: {
+            connected: true,
+            supported: true,
+            deviceName: 'Neon Meter USB'
+        }
+    })
+    const view = new FakeView()
+    const bridge = new FakeBridge({})
+    const bleClient = new FakeBleClient({
+        disconnectPromise: disconnectGate.promise
+    })
+    const controller = new AppController({
+        state,
+        view,
+        bridge,
+        bleClient
+    })
+
+    await controller.init()
+    const preparePromise = view.prepareFirmwareInstall()
+    await flushMicrotasks()
+
+    assert.equal(bleClient.disconnectedByUser, true)
+    assert.equal(state.getSnapshot().firmware.installerReady, false)
+    assert.notEqual(state.getSnapshot().firmware.status, 'Installer ready')
+
+    disconnectGate.resolve()
+    await preparePromise
+
+    assert.equal(state.getSnapshot().firmware.installerReady, true)
+    assert.equal(state.getSnapshot().firmware.status, 'Installer ready')
+})
+
 test('AppController resumes USB probing after installer dialog closes', async () => {
     const timers = new FakeTimers()
     const state = new AppState({
@@ -1005,6 +1041,11 @@ class FakeBleClient extends EventTarget {
 
     disconnect() {
         this.disconnectedByUser = true
+        if (this.options.disconnectPromise) {
+            return this.options.disconnectPromise.then(() =>
+                this.emitDisconnected()
+            )
+        }
         this.emitDisconnected()
     }
 

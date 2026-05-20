@@ -107,7 +107,12 @@
                     <esp-web-install-button
                         manifest="https://sunbox.github.io/neon-meter/manifest.json"
                     >
-                        <button slot="activate" class="btn-primary">
+                        <button
+                            id="firmwareInstallButton"
+                            slot="activate"
+                            class="btn-primary"
+                            disabled
+                        >
                             Install or update
                         </button>
                         <span slot="unsupported" class="tool-message">
