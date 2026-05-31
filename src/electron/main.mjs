@@ -43,6 +43,8 @@ let mainWindow = null
 /** @type {Tray | null} */
 let tray = null
 
+let isQuitting = false
+
 const credentialResolver = createProviderCredentialResolver()
 const usbClient = new NativeUsbSerialAiMeterClient()
 const bleClient = new NativeNobleAiMeterClient()
@@ -81,6 +83,11 @@ function createWindow(options = {}) {
             return
         }
         showMainWindow()
+    })
+    window.on('close', (event) => {
+        if (isQuitting) return
+        event.preventDefault()
+        hideMainWindow()
     })
     window.on('show', () => updateTrayMenu())
     window.on('hide', () => updateTrayMenu())
@@ -512,6 +519,7 @@ app.on('activate', () => {
 })
 
 app.on('before-quit', () => {
+    isQuitting = true
     deviceClient.disconnect()
 })
 

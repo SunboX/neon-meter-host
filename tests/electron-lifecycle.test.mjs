@@ -4,15 +4,17 @@ import test from 'node:test'
 
 const root = new URL('../', import.meta.url)
 
-test('system window close quits instead of hiding to tray', async () => {
+test('system window close hides to tray instead of quitting', async () => {
     const main = await readFile(new URL('src/electron/main.mjs', root), 'utf8')
 
-    assert.doesNotMatch(main, /window\.on\('close'/)
-    assert.doesNotMatch(main, /event\.preventDefault\(\)/)
-    assert.doesNotMatch(main, /window\.hide\(\)/)
+    assert.match(main, /let isQuitting = false/)
     assert.match(
         main,
-        /app\.on\('window-all-closed',\s*\(\)\s*=>\s*{\s*app\.quit\(\)\s*}\s*\)/s
+        /window\.on\('close',\s*\(event\)\s*=>\s*{\s*if \(isQuitting\) return\s*event\.preventDefault\(\)\s*hideMainWindow\(\)\s*}\)/s
+    )
+    assert.match(
+        main,
+        /app\.on\('before-quit',\s*\(\)\s*=>\s*{\s*isQuitting = true\s*deviceClient\.disconnect\(\)\s*}\s*\)/s
     )
 })
 
@@ -55,6 +57,6 @@ test('app quit explicitly disconnects native device transports before process ex
 
     assert.match(
         main,
-        /app\.on\('before-quit',\s*\(\)\s*=>\s*{\s*deviceClient\.disconnect\(\)\s*}\s*\)/s
+        /app\.on\('before-quit',\s*\(\)\s*=>\s*{\s*isQuitting = true\s*deviceClient\.disconnect\(\)\s*}\s*\)/s
     )
 })
