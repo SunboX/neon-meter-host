@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.6 - 2026-06-05
+
+### Fixed
+
+- Fixed ChatGPT usage parsing so integer `used_percent` and
+  `remaining_percent` fields are treated as whole percentages instead of
+  ratio-style values.
+- Kept ratio normalization for `utilization` and `used_ratio` fields, which can
+  still arrive as `0.0` to `1.0` fractions.
+
+### Changed
+
+- Updated the installer workflow to use the Node 24-compatible artifact actions.
+- Pinned the Windows x64 installer job to the Visual Studio 2026 Windows runner.
+
+### Validation
+
+- `node scripts/run-tests.mjs`
+
 ## 1.0.4 - 2026-05-20
 
 ### Fixed

@@ -46,6 +46,29 @@ test('parseChatGptUsagePayload maps quota windows to firmware fields', () => {
     assert.equal(payload.ok, true)
 })
 
+test('parseChatGptUsagePayload keeps integer percent fields as percentages', () => {
+    const payload = parseChatGptUsagePayload(
+        {
+            rate_limit: {
+                allowed: true,
+                primary_window: {
+                    used_percent: 6,
+                    reset_at: 1778853600
+                },
+                secondary_window: {
+                    used_percent: 1,
+                    reset_at: 1779026400
+                }
+            }
+        },
+        new Date('2026-05-15T12:00:00Z')
+    )
+
+    assert.equal(payload.s, 6)
+    assert.equal(payload.w, 1)
+    assert.equal(payload.detail, '5h 6% / 7d 1%')
+})
+
 test('ChatGptUsageProvider calls wham usage with Codex auth headers', async () => {
     const requested = []
     const fetchImpl = async (url, options) => {

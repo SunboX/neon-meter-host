@@ -231,18 +231,17 @@ function percentFromWindow(window) {
         'percent_used',
         'used_pct'
     ])
-    if (usedPercent !== null) return normalizePercent(usedPercent)
+    if (usedPercent !== null) return usedPercent
 
     const remainingPercent = numberFromKeys(window, [
         'remaining_percent',
         'percent_left',
         'remaining_pct'
     ])
-    if (remainingPercent !== null)
-        return 100 - normalizePercent(remainingPercent)
+    if (remainingPercent !== null) return 100 - remainingPercent
 
     const utilization = numberFromKeys(window, ['utilization', 'used_ratio'])
-    if (utilization !== null) return normalizePercent(utilization)
+    if (utilization !== null) return normalizeRatioOrPercent(utilization)
 
     const used = numberFromKeys(window, ['used', 'current', 'consumed'])
     const limit = numberFromKeys(window, ['limit', 'max', 'allowed'])
@@ -271,11 +270,11 @@ function resetFromWindow(window) {
 }
 
 /**
- * Normalizes ratio or percentage values.
+ * Normalizes ratio-style values while still accepting whole percentages.
  * @param {number} value
  * @returns {number}
  */
-function normalizePercent(value) {
+function normalizeRatioOrPercent(value) {
     return value <= 1 ? value * 100 : value
 }
 
