@@ -8,6 +8,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
     startAtLogin: false,
     startHidden: false,
     autoConnectBle: true,
+    showTrayQuotaStatus: true,
     rememberedBleDeviceId: '',
     rememberedBleDeviceName: ''
 })
@@ -44,6 +45,7 @@ export function createPersistedSettings(snapshot) {
         startAtLogin: settings.startAtLogin,
         startHidden: settings.startHidden,
         autoConnectBle: settings.autoConnectBle,
+        showTrayQuotaStatus: settings.showTrayQuotaStatus,
         rememberedBleDeviceId: settings.rememberedBleDeviceId,
         rememberedBleDeviceName: settings.rememberedBleDeviceName,
         settingsConfigured: true
@@ -88,7 +90,11 @@ function normalizeSettings(source) {
         autoConnectBle:
             typeof source.autoConnectBle === 'boolean'
                 ? source.autoConnectBle
-                : DEFAULT_SETTINGS.autoConnectBle
+                : DEFAULT_SETTINGS.autoConnectBle,
+        showTrayQuotaStatus:
+            typeof source.showTrayQuotaStatus === 'boolean'
+                ? source.showTrayQuotaStatus
+                : DEFAULT_SETTINGS.showTrayQuotaStatus
     }
 }
 

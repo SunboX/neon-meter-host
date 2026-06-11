@@ -119,7 +119,11 @@ test('electron runtime uses Neon Meter name and icon assets', async () => {
     assert.match(main, /neon-meter-tray-template\.png/)
     assert.match(main, /trayIcon\.setTemplateImage\(true\)/)
     assert.match(main, /new Tray\(trayIcon\)/)
-    assert.match(main, /tray\.setToolTip\(APP_NAME\)/)
+    assert.match(main, /function updateTrayStatus/)
+    assert.match(
+        main,
+        /tray\.setToolTip\(quotaStatus\?\.tooltip \|\| APP_NAME\)/
+    )
     assert.match(main, /Show Neon Meter/)
 })
 

@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.0.7 - 2026-06-11
+
+### Added
+
+- Added a default-on menu bar quota status display for the active provider,
+  showing remaining Session (`S`) and Weekly (`W`) capacity directly in the
+  tray/menu bar.
+- Added generated tray gauge rendering that mirrors the Neon Meter CoreS3
+  remaining-capacity color buckets for healthy, warning, and exhausted quota
+  states.
+- Added context-menu quota detail rows so provider session and weekly status
+  can be inspected without opening the main app window.
+- Added a tray context-menu toggle to hide or show the quota status while
+  leaving provider sync and device updates running.
+
+### Changed
+
+- Persisted the tray quota visibility preference as non-secret app settings.
+- Preserved main-process tray visibility state when renderer settings are
+  saved, preventing stale renderer settings from overwriting the tray toggle.
+- Updated README screenshots and notes to document the menu bar quota display.
+
+### Validation
+
+- `npm test`
+
 ## 1.0.6 - 2026-06-05
 
 ### Fixed

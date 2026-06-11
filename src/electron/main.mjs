@@ -3,6 +3,10 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { buildProviderBundlePayload } from '../core/ProviderBundle.mjs'
+import {
+    buildTrayQuotaStatus,
+    isTrayQuotaStatusVisible
+} from './TrayQuotaStatus.mjs'
 import { ChatGptUsageProvider } from '../providers/ChatGptUsageProvider.mjs'
 import { ClaudeCodeUsageProvider } from '../providers/ClaudeCodeUsageProvider.mjs'
 import {
@@ -44,6 +48,10 @@ let mainWindow = null
 let tray = null
 
 let isQuitting = false
+
+let trayQuotaStatusVisible = true
+
+let latestProviderBundle = null
 
 const credentialResolver = createProviderCredentialResolver()
 const usbClient = new NativeUsbSerialAiMeterClient()
@@ -102,7 +110,6 @@ function createTray() {
     const trayIcon = createTrayIcon()
 
     tray = new Tray(trayIcon)
-    tray.setToolTip(APP_NAME)
     updateTrayMenu()
 }
 
@@ -112,8 +119,28 @@ function createTray() {
  */
 function updateTrayMenu() {
     if (!tray) return
+    const quotaStatus = trayQuotaStatusVisible
+        ? buildTrayQuotaStatus(latestProviderBundle, {
+              appName: APP_NAME
+          })
+        : null
+    updateTrayStatus(quotaStatus)
     tray.setContextMenu(
         Menu.buildFromTemplate([
+            ...(quotaStatus
+                ? quotaStatus.menuItems.concat({ type: 'separator' })
+                : []),
+            {
+                label: trayQuotaStatusVisible
+                    ? 'Hide quota status'
+                    : 'Show quota status',
+                click: () => {
+                    void setTrayQuotaStatusVisible(!trayQuotaStatusVisible)
+                }
+            },
+            {
+                type: 'separator'
+            },
             {
                 label: mainWindow?.isVisible()
                     ? 'Hide Neon Meter'
@@ -131,6 +158,54 @@ function updateTrayMenu() {
             }
         ])
     )
+}
+
+/**
+ * Applies tray title and tooltip text for the current quota visibility state.
+ * @param {{ title?: string, tooltip?: string } | null} quotaStatus
+ * @returns {void}
+ */
+function updateTrayStatus(quotaStatus) {
+    if (!tray) return
+    if (quotaStatus?.imagePngBase64) {
+        tray.setImage(
+            nativeImage.createFromBuffer(
+                Buffer.from(quotaStatus.imagePngBase64, 'base64'),
+                {
+                    scaleFactor: quotaStatus.imageScaleFactor || 1
+                }
+            )
+        )
+        if (typeof tray.setTitle === 'function') {
+            tray.setTitle('')
+        }
+        tray.setToolTip(quotaStatus.tooltip || APP_NAME)
+        return
+    }
+
+    tray.setImage(createTrayIcon())
+    if (typeof tray.setTitle === 'function') {
+        tray.setTitle(quotaStatus?.title || '')
+    }
+    tray.setToolTip(quotaStatus?.tooltip || APP_NAME)
+}
+
+/**
+ * Toggles the tray quota/status display and persists the choice.
+ * @param {boolean} visible
+ * @returns {Promise<void>}
+ */
+async function setTrayQuotaStatusVisible(visible) {
+    trayQuotaStatusVisible = Boolean(visible)
+    updateTrayMenu()
+    try {
+        await writeSettings({
+            ...(await readSettings()),
+            showTrayQuotaStatus: trayQuotaStatusVisible
+        })
+    } catch (error) {
+        console.warn('Tray quota status setting failed:', error)
+    }
 }
 
 /**
@@ -362,7 +437,7 @@ function registerIpc() {
 
     ipcMain.handle('settings:load', async () => readSettings())
     ipcMain.handle('settings:save', async (_event, settings) =>
-        writeSettings(settings)
+        writeRendererSettings(settings)
     )
 
     ipcMain.handle('provider:fetch-bundle', async (_event, settings) => {
@@ -393,9 +468,12 @@ async function fetchProviderBundle(settings) {
             status.chatgpt.configured ? fetchChatGptPayload() : null
         ].filter(Boolean)
     )
-    return buildProviderBundlePayload(payloads, {
+    const bundle = buildProviderBundlePayload(payloads, {
         rotationSeconds: settings?.rotationSeconds
     })
+    latestProviderBundle = bundle
+    updateTrayMenu()
+    return bundle
 }
 
 /**
@@ -433,7 +511,22 @@ async function readSettings() {
 }
 
 /**
- * Writes persisted renderer settings.
+ * Writes renderer-originated settings without letting stale renderer state
+ * overwrite the context-menu-owned tray visibility flag.
+ * @param {unknown} settings
+ * @returns {Promise<object>}
+ */
+async function writeRendererSettings(settings) {
+    const safeSettings =
+        settings && typeof settings === 'object' ? settings : {}
+    return writeSettings({
+        ...safeSettings,
+        showTrayQuotaStatus: trayQuotaStatusVisible
+    })
+}
+
+/**
+ * Writes persisted settings.
  * @param {unknown} settings
  * @returns {Promise<object>}
  */
@@ -452,6 +545,10 @@ async function writeSettings(settings) {
         JSON.stringify(safeSettings, null, 2),
         'utf8'
     )
+    if (Object.hasOwn(safeSettings, 'showTrayQuotaStatus')) {
+        trayQuotaStatusVisible = isTrayQuotaStatusVisible(safeSettings)
+        updateTrayMenu()
+    }
     return safeSettings
 }
 
@@ -496,6 +593,7 @@ app.whenReady()
         installBluetoothHandlers()
         installSerialHandlers()
         const settings = await readSettings()
+        trayQuotaStatusVisible = isTrayQuotaStatusVisible(settings)
         await applyPersistedAutostart(settings)
         return settings
     })

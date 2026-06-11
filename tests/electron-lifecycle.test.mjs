@@ -35,6 +35,35 @@ test('tray menu can hide or show Neon Meter and sync the macOS Dock', async () =
     )
 })
 
+test('tray menu can hide or show quota status without changing sync', async () => {
+    const main = await readFile(new URL('src/electron/main.mjs', root), 'utf8')
+
+    assert.match(main, /isTrayQuotaStatusVisible/)
+    assert.match(main, /buildTrayQuotaStatus/)
+    assert.match(main, /let trayQuotaStatusVisible = true/)
+    assert.match(main, /let latestProviderBundle = null/)
+    assert.match(main, /showTrayQuotaStatus/)
+    assert.match(main, /Hide quota status/)
+    assert.match(main, /Show quota status/)
+    assert.match(main, /function setTrayQuotaStatusVisible/)
+    assert.match(main, /tray\.setTitle/)
+    assert.match(main, /nativeImage\.createFromBuffer/)
+    assert.match(main, /imageScaleFactor/)
+    assert.match(main, /tray\.setImage\(createTrayIcon\(\)\)/)
+    assert.match(main, /latestProviderBundle = bundle/)
+})
+
+test('renderer settings saves preserve the main-process tray quota visibility', async () => {
+    const main = await readFile(new URL('src/electron/main.mjs', root), 'utf8')
+
+    assert.match(
+        main,
+        /ipcMain\.handle\('settings:save', async \(_event, settings\) =>\s*writeRendererSettings\(settings\)\s*\)/s
+    )
+    assert.match(main, /function writeRendererSettings\(settings\)/)
+    assert.match(main, /showTrayQuotaStatus: trayQuotaStatusVisible/)
+})
+
 test('startup can keep the main window and macOS Dock hidden from persisted settings', async () => {
     const main = await readFile(new URL('src/electron/main.mjs', root), 'utf8')
 

@@ -15,6 +15,7 @@ test('normalizePersistedSettings marks an empty store as first run', () => {
     assert.equal(result.settings.startAtLogin, false)
     assert.equal(result.settings.startHidden, false)
     assert.equal(result.settings.autoConnectBle, true)
+    assert.equal(result.settings.showTrayQuotaStatus, true)
     assert.equal(result.settings.rotationSeconds, 30)
 })
 
@@ -25,6 +26,7 @@ test('normalizePersistedSettings restores locale and daemon settings', () => {
         startAtLogin: true,
         startHidden: true,
         autoConnectBle: false,
+        showTrayQuotaStatus: false,
         syncIntervalMinutes: 12,
         rotationSeconds: 45,
         rememberedBleDeviceId: 'device-1',
@@ -38,6 +40,7 @@ test('normalizePersistedSettings restores locale and daemon settings', () => {
     assert.equal(result.settings.startAtLogin, true)
     assert.equal(result.settings.startHidden, true)
     assert.equal(result.settings.autoConnectBle, false)
+    assert.equal(result.settings.showTrayQuotaStatus, false)
     assert.equal(result.settings.syncIntervalMinutes, 12)
     assert.equal(result.settings.rotationSeconds, 45)
     assert.equal(result.settings.rememberedBleDeviceId, 'device-1')
@@ -52,6 +55,7 @@ test('createPersistedSettings stores only daemon settings', () => {
             startAtLogin: true,
             startHidden: true,
             autoConnectBle: false,
+            showTrayQuotaStatus: false,
             syncIntervalMinutes: 20,
             rotationSeconds: 60,
             rememberedBleDeviceId: 'device-1',
@@ -68,6 +72,7 @@ test('createPersistedSettings stores only daemon settings', () => {
     assert.equal(persisted.startAtLogin, true)
     assert.equal(persisted.startHidden, true)
     assert.equal(persisted.autoConnectBle, false)
+    assert.equal(persisted.showTrayQuotaStatus, false)
     assert.equal(persisted.syncIntervalMinutes, 20)
     assert.equal(persisted.rotationSeconds, 60)
     assert.equal(persisted.rememberedBleDeviceId, 'device-1')

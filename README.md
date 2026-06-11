@@ -14,6 +14,14 @@ project.
 
 ![Neon Meter settings](docs/screenshots/neon-meter-settings.png)
 
+![Neon Meter menu bar quota status](docs/screenshots/neon-meter-tray-quota-status.png)
+
+The menu bar quota display is enabled by default and shows remaining Session
+(`S`) and Weekly (`W`) capacity for the active provider. Its gauges use the same
+remaining-capacity color buckets as the Neon Meter CoreS3 display. You can hide
+or show the menu bar gauges from the tray context menu; hiding them only removes
+the status-bar display while provider sync and device updates continue.
+
 ## Quick Start
 
 ```bash
