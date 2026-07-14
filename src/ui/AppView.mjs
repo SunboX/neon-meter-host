@@ -32,7 +32,9 @@ export class AppView {
         this.#setText('#syncStatus', snapshot.sync.status || 'Ready')
         this.#setHidden(
             '#syncLoader',
-            !snapshot.ble.connecting && !snapshot.sync.running
+            !snapshot.ble.connecting &&
+                !snapshot.ble.repairing &&
+                !snapshot.sync.running
         )
         this.#setText('#syncError', snapshot.sync.error || '')
         this.#setText('#lastSync', snapshot.sync.lastSync || 'Never')
@@ -41,6 +43,15 @@ export class AppView {
             snapshot.payload ? JSON.stringify(snapshot.payload) : '{}'
         )
         this.#renderFirmware(snapshot)
+        this.#setHidden('#bleRepairPanel', !snapshot.ble.repairRequired)
+        this.#setText(
+            '#bleRepairMessage',
+            'Connect USB to repair automatically, or forget the old Neon Meter entry in macOS Bluetooth Settings.'
+        )
+        this.#setDisabled(
+            '#openBluetoothSettingsButton',
+            Boolean(snapshot.ble.repairing)
+        )
 
         this.#setValue('#localeSelect', snapshot.locale)
         this.#setChecked('#autoSyncInput', snapshot.settings.autoSync !== false)
@@ -86,19 +97,28 @@ export class AppView {
             '#connectButton',
             snapshot.ble.connected ||
                 snapshot.ble.connecting ||
+                snapshot.ble.repairing ||
                 !snapshot.ble.supported
         )
         this.#setText(
             '#connectButton',
-            snapshot.ble.connecting ? 'Connecting' : 'Connect'
+            snapshot.ble.repairing
+                ? 'Repairing'
+                : snapshot.ble.connecting
+                  ? 'Connecting'
+                  : 'Connect'
         )
         this.#setDisabled(
             '#disconnectButton',
-            !snapshot.ble.connected || snapshot.ble.connecting
+            !snapshot.ble.connected ||
+                snapshot.ble.connecting ||
+                snapshot.ble.repairing
         )
         this.#setDisabled(
             '#syncButton',
-            snapshot.sync.running || snapshot.ble.connecting
+            snapshot.sync.running ||
+                snapshot.ble.connecting ||
+                snapshot.ble.repairing
         )
     }
 
@@ -127,6 +147,18 @@ export class AppView {
      */
     bindDisconnect(callback) {
         this.#button('#disconnectButton')?.addEventListener('click', callback)
+    }
+
+    /**
+     * Binds the macOS Bluetooth Settings recovery action.
+     * @param {() => void} callback
+     * @returns {void}
+     */
+    bindOpenBluetoothSettings(callback) {
+        this.#button('#openBluetoothSettingsButton')?.addEventListener(
+            'click',
+            callback
+        )
     }
 
     /**

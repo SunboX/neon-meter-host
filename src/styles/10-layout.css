@@ -195,6 +195,36 @@ h2 {
     box-shadow: 0 0 10px rgba(255, 106, 0, 0.24);
 }
 
+.ble-repair-panel {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    border: 1px solid rgba(255, 106, 0, 0.5);
+    border-radius: var(--radius);
+    padding: 12px;
+    background: rgba(255, 106, 0, 0.08);
+}
+
+.ble-repair-panel[hidden] {
+    display: none;
+}
+
+.ble-repair-panel div {
+    display: grid;
+    gap: 4px;
+}
+
+.ble-repair-panel strong {
+    color: #ffd7ab;
+}
+
+.ble-repair-panel p {
+    color: var(--muted);
+    font-size: 0.86rem;
+}
+
 .workspace {
     display: grid;
     grid-template-columns: 360px minmax(0, 1fr);

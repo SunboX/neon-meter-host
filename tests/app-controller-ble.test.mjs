@@ -374,6 +374,95 @@ test('AppController retries remembered BLE startup auto-connect when unavailable
     controller.dispose()
 })
 
+test('AppController repairs pairing after two BLE timeouts for the same device', async () => {
+    const state = new AppState()
+    const view = new FakeView()
+    const bridge = new FakeBridge({
+        loadSettings: {
+            autoSync: false,
+            rememberedBleDeviceId: 'stale-meter',
+            rememberedBleDeviceName: 'Neon Meter'
+        }
+    })
+    const bleClient = new FakeBleClient({
+        rememberedDevices: [
+            bleTimeoutError('stale-meter'),
+            bleTimeoutError('stale-meter')
+        ],
+        repairResult: { accepted: true }
+    })
+    const timers = new FakeTimers()
+    const controller = new AppController({
+        state,
+        view,
+        bridge,
+        bleClient,
+        timers
+    })
+
+    await controller.init()
+    await flushMicrotasks()
+
+    assert.equal(bleClient.repairCalls, 0)
+    assert.equal(timers.pendingCount, 1)
+    assert.equal(
+        state.getSnapshot().sync.status,
+        'Retrying Neon Meter Bluetooth'
+    )
+
+    await timers.runNext()
+    await flushMicrotasks()
+
+    assert.equal(bleClient.repairCalls, 1)
+    assert.equal(timers.pendingCount, 1)
+    assert.equal(state.getSnapshot().ble.repairing, true)
+    assert.equal(state.getSnapshot().sync.status, 'Repairing Bluetooth pairing')
+
+    controller.dispose()
+})
+
+test('AppController stops reconnecting when automatic BLE repair needs USB', async () => {
+    const state = new AppState()
+    const view = new FakeView()
+    const bridge = new FakeBridge({
+        loadSettings: {
+            autoSync: false,
+            rememberedBleDeviceId: 'stale-meter',
+            rememberedBleDeviceName: 'Neon Meter'
+        }
+    })
+    const bleClient = new FakeBleClient({
+        rememberedDevices: [
+            bleTimeoutError('stale-meter'),
+            bleTimeoutError('stale-meter')
+        ],
+        repairResult: { accepted: false, reason: 'usb-unavailable' }
+    })
+    const timers = new FakeTimers()
+    const controller = new AppController({
+        state,
+        view,
+        bridge,
+        bleClient,
+        timers
+    })
+
+    await controller.init()
+    await flushMicrotasks()
+    await timers.runNext()
+    await flushMicrotasks()
+
+    const snapshot = state.getSnapshot()
+    assert.equal(bleClient.repairCalls, 1)
+    assert.equal(timers.pendingCount, 0)
+    assert.equal(snapshot.ble.repairing, false)
+    assert.equal(snapshot.ble.repairRequired, true)
+    assert.match(snapshot.sync.error, /Connect Neon Meter by USB/)
+    assert.match(snapshot.sync.error, /forget the old Neon Meter entry/)
+
+    controller.dispose()
+})
+
 test('AppController reconnects a remembered BLE device after connection loss', async () => {
     const state = new AppState()
     const view = new FakeView()
@@ -998,6 +1087,7 @@ class FakeBleClient extends EventTarget {
     payloads = []
     rememberedConnectRequests = []
     disconnectedByUser = false
+    repairCalls = 0
 
     constructor(options = {}) {
         super()
@@ -1034,7 +1124,9 @@ class FakeBleClient extends EventTarget {
             name: device.name
         })
         if (Array.isArray(this.options.rememberedDevices)) {
-            return this.options.rememberedDevices.shift() || null
+            const result = this.options.rememberedDevices.shift()
+            if (result instanceof Error) throw result
+            return result || null
         }
         return this.options.rememberedDevice || null
     }
@@ -1051,6 +1143,16 @@ class FakeBleClient extends EventTarget {
 
     async writePayload(payload) {
         this.payloads.push(payload)
+    }
+
+    async repairBlePairing() {
+        this.repairCalls += 1
+        return (
+            this.options.repairResult || {
+                accepted: false,
+                reason: 'usb-unavailable'
+            }
+        )
     }
 
     emitDisconnected() {
@@ -1104,4 +1206,12 @@ function createDeferred() {
     })
 
     return { promise, resolve, reject }
+}
+
+function bleTimeoutError(deviceId) {
+    const error = new Error('Neon Meter BLE connection timed out')
+    error.code = 'BLE_CONNECTION_TIMEOUT'
+    error.deviceId = deviceId
+    error.deviceName = 'Neon Meter'
+    return error
 }

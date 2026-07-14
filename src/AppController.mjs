@@ -3,6 +3,8 @@ import {
     normalizePersistedSettings
 } from './core/AppSettings.mjs'
 import { compareSemver } from './firmware/FirmwareReleaseClient.mjs'
+import { BlePairingRecovery } from './ble/BlePairingRecovery.mjs'
+import { errorMessage } from './core/ErrorMessage.mjs'
 
 /**
  * Coordinates renderer state, BLE writes, and provider refreshes.
@@ -25,14 +27,15 @@ export class AppController {
     #activeTransport = ''
     #allowDisconnectedUsbAutoConnect = false
     #firmwareInstallerUnsubscribe = null
+    #blePairingRecovery = new BlePairingRecovery()
 
     /**
      * @param {{
      * state: import('./core/AppState.mjs').AppState,
      * view: import('./ui/AppView.mjs').AppView,
      * i18n?: { getLocale: () => string, setLocale: (locale: string) => Promise<void>, translate: (key: string) => string, applyToDom: (node: Document) => void } | null,
-     * bridge: { getAppMeta: () => Promise<object>, loadSettings: () => Promise<object>, saveSettings: (settings: object) => Promise<object>, fetchProviderBundle: (settings?: object) => Promise<object>, fetchLatestFirmwareRelease?: () => Promise<object | null>, onFirmwareInstallerEvent?: (callback: (event: object) => void) => (() => void) },
-     * bleClient: EventTarget & { isSupported: () => boolean, canConnectWithoutRemembered?: () => boolean, connect: (options?: { selectDevice?: (devices: Array<{ id: string, name: string, rssi?: number }>) => Promise<object | string | null> }) => Promise<{ id?: string, name: string, connected: boolean, transport?: string }>, connectRemembered?: (device: { id?: string, name?: string }) => Promise<{ id?: string, name: string, connected: boolean, transport?: string } | null>, disconnect: () => void | Promise<void>, writePayload: (payload: object) => Promise<void> },
+     * bridge: { getAppMeta: () => Promise<object>, loadSettings: () => Promise<object>, saveSettings: (settings: object) => Promise<object>, fetchProviderBundle: (settings?: object) => Promise<object>, fetchLatestFirmwareRelease?: () => Promise<object | null>, onFirmwareInstallerEvent?: (callback: (event: object) => void) => (() => void), openBluetoothSettings?: () => Promise<void> },
+     * bleClient: EventTarget & { isSupported: () => boolean, canConnectWithoutRemembered?: () => boolean, connect: (options?: { selectDevice?: (devices: Array<{ id: string, name: string, rssi?: number }>) => Promise<object | string | null> }) => Promise<{ id?: string, name: string, connected: boolean, transport?: string }>, connectRemembered?: (device: { id?: string, name?: string }) => Promise<{ id?: string, name: string, connected: boolean, transport?: string } | null>, disconnect: () => void | Promise<void>, writePayload: (payload: object) => Promise<void>, repairBlePairing?: () => Promise<{ accepted: boolean, reason?: string }> },
      * timers?: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout' | 'setInterval' | 'clearInterval'>,
      * bleReconnectDelayMs?: number,
      * usbAutoConnectDelayMs?: number
@@ -116,6 +119,7 @@ export class AppController {
         this.#cancelResetRefresh()
         this.#firmwareInstallerUnsubscribe?.()
         this.#firmwareInstallerUnsubscribe = null
+        this.#blePairingRecovery.reset()
         this.#skipNextBleReconnect = true
         if (this.#syncTimer) this.#timers.clearInterval(this.#syncTimer)
         this.#bleClient.disconnect()
@@ -139,6 +143,9 @@ export class AppController {
         this.#view.bindFirmwareRecheck?.(() => this.#recheckFirmware())
         this.#view.bindFirmwareInstallerClosed?.((event) =>
             this.#resumeAfterFirmwareInstaller(event)
+        )
+        this.#view.bindOpenBluetoothSettings?.(() =>
+            this.#bridge.openBluetoothSettings?.()
         )
     }
 
@@ -251,12 +258,13 @@ export class AppController {
         try {
             this.#cancelBleReconnect()
             const device = await this.#bleClient.connect({
-                selectDevice: (devices) => this.#view.chooseBleDevice(devices)
+                selectDevice: (devices) => this.#chooseBleDevice(devices)
             })
             this.#setConnectedDevice(device)
             await this.#rememberBleDevice(device)
             await this.#syncNow()
         } catch (error) {
+            if (await this.#handleBleConnectionError(error)) return
             this.#state.patch({
                 ble: { connecting: false },
                 sync: {
@@ -276,7 +284,12 @@ export class AppController {
         this.#cancelBleReconnect()
         this.#cancelUsbAutoConnect()
         this.#skipNextBleReconnect = true
-        this.#state.setValue('ble', { connecting: false })
+        this.#blePairingRecovery.reset()
+        this.#state.setValue('ble', {
+            connecting: false,
+            repairRequired: false,
+            repairing: false
+        })
         this.#bleClient.disconnect()
         if (shouldKeepUsbProbe) {
             this.#scheduleUsbAutoConnect({ allowDisconnected: true })
@@ -324,6 +337,7 @@ export class AppController {
             await this.#rememberBleDevice(device)
             await this.#syncNow()
         } catch (error) {
+            if (await this.#handleBleConnectionError(error)) return
             this.#state.setValue('sync', {
                 status: 'Device auto-connect failed',
                 error: errorMessage(error)
@@ -392,6 +406,7 @@ export class AppController {
                 await this.#syncNow()
             }
         } catch (error) {
+            if (await this.#handleBleConnectionError(error)) return
             this.#state.setValue('sync', {
                 status: 'Waiting for Neon Meter to return',
                 error: errorMessage(error)
@@ -492,11 +507,14 @@ export class AppController {
      * @returns {void}
      */
     #setConnectedDevice(device) {
+        this.#blePairingRecovery.reset()
         this.#activeTransport = String(device?.transport || 'ble')
         this.#state.setValue('ble', {
             connected: true,
             connecting: false,
-            deviceName: String(device?.name || 'Neon Meter')
+            deviceName: String(device?.name || 'Neon Meter'),
+            repairRequired: false,
+            repairing: false
         })
         this.#setConnectedFirmware(device)
         if (this.#activeTransport === 'usb') this.#cancelUsbAutoConnect()
@@ -562,6 +580,93 @@ export class AppController {
      */
     #canConnectWithoutRemembered() {
         return Boolean(this.#bleClient.canConnectWithoutRemembered?.())
+    }
+
+    /**
+     * Tracks a manual choice and clears stale timeout counts when it changes.
+     * @param {Array<{ id?: string, name?: string, rssi?: number }>} devices
+     * @returns {Promise<object | string | null>}
+     */
+    async #chooseBleDevice(devices) {
+        const selected = await this.#view.chooseBleDevice(devices)
+        this.#blePairingRecovery.noteManualSelection(selected)
+        return selected
+    }
+
+    /**
+     * Handles a typed BLE connection timeout and starts repair after repetition.
+     * @param {unknown} error
+     * @returns {Promise<boolean>}
+     */
+    async #handleBleConnectionError(error) {
+        if (String(error?.code || '') !== 'BLE_CONNECTION_TIMEOUT') {
+            return false
+        }
+
+        const snapshot = this.#state.getSnapshot()
+        const attempts = this.#blePairingRecovery.recordTimeout(error, {
+            id: snapshot.settings.rememberedBleDeviceId,
+            name: snapshot.settings.rememberedBleDeviceName
+        })
+        this.#state.setValue('ble', { connecting: false })
+        if (attempts < 2) {
+            this.#scheduleBleReconnect()
+            this.#state.setValue('sync', {
+                status: 'Retrying Neon Meter Bluetooth',
+                error: errorMessage(error)
+            })
+            return true
+        }
+
+        await this.#repairTimedOutBlePairing()
+        return true
+    }
+
+    /**
+     * Attempts USB-assisted pairing repair and stops retries when unavailable.
+     * @returns {Promise<void>}
+     */
+    async #repairTimedOutBlePairing() {
+        this.#cancelBleReconnect()
+        this.#cancelUsbAutoConnect()
+        this.#state.patch({
+            ble: {
+                connecting: false,
+                repairRequired: false,
+                repairing: true
+            },
+            sync: {
+                status: 'Repairing Bluetooth pairing',
+                error: ''
+            }
+        })
+
+        const result = await this.#blePairingRecovery.repair(this.#bleClient)
+
+        if (result?.accepted) {
+            this.#blePairingRecovery.reset()
+            this.#scheduleBleReconnect()
+            this.#state.patch({
+                ble: { repairRequired: false, repairing: true },
+                sync: {
+                    status: 'Repairing Bluetooth pairing',
+                    error: ''
+                }
+            })
+            return
+        }
+
+        const repairMessage = this.#blePairingRecovery.fallbackMessage(
+            result?.reason
+        )
+        this.#cancelBleReconnect()
+        this.#state.patch({
+            ble: { repairRequired: true, repairing: false },
+            sync: {
+                status: 'Bluetooth pairing repair required',
+                error: repairMessage
+            }
+        })
     }
 
     /**
@@ -799,17 +904,6 @@ function rememberedBleDeviceFrom(snapshot) {
         name: String(snapshot.settings.rememberedBleDeviceName || '')
     }
     return device.id || device.name ? device : null
-}
-
-/**
- * Formats unknown errors.
- * @param {unknown} error
- * @returns {string}
- */
-function errorMessage(error) {
-    return error instanceof Error
-        ? error.message
-        : String(error || 'Unknown error')
 }
 
 /**

@@ -23,7 +23,7 @@ export const DEFAULT_FIRMWARE_STATE = Object.freeze({
  * State container for the Electron host renderer.
  */
 export class AppState {
-    /** @type {{ provider: string, locale: string, settings: typeof DEFAULT_SETTINGS, ble: { connected: boolean, connecting: boolean, deviceName: string, supported: boolean }, firmware: typeof DEFAULT_FIRMWARE_STATE, sync: { running: boolean, lastSync: string, status: string, error: string }, payload: object | null }} */
+    /** @type {{ provider: string, locale: string, settings: typeof DEFAULT_SETTINGS, ble: { connected: boolean, connecting: boolean, deviceName: string, supported: boolean, repairRequired: boolean, repairing: boolean }, firmware: typeof DEFAULT_FIRMWARE_STATE, sync: { running: boolean, lastSync: string, status: string, error: string }, payload: object | null }} */
     #state
 
     /** @type {Set<(snapshot: ReturnType<AppState['getSnapshot']>) => void>} */
@@ -41,7 +41,9 @@ export class AppState {
                 connected: Boolean(initial.ble?.connected),
                 connecting: Boolean(initial.ble?.connecting),
                 deviceName: String(initial.ble?.deviceName || ''),
-                supported: Boolean(initial.ble?.supported)
+                supported: Boolean(initial.ble?.supported),
+                repairRequired: Boolean(initial.ble?.repairRequired),
+                repairing: Boolean(initial.ble?.repairing)
             },
             firmware: {
                 ...DEFAULT_FIRMWARE_STATE,
@@ -60,7 +62,7 @@ export class AppState {
 
     /**
      * Returns an immutable state snapshot.
-     * @returns {{ provider: string, locale: string, settings: typeof DEFAULT_SETTINGS, ble: { connected: boolean, connecting: boolean, deviceName: string, supported: boolean }, firmware: typeof DEFAULT_FIRMWARE_STATE, sync: { running: boolean, lastSync: string, status: string, error: string }, payload: object | null }}
+     * @returns {{ provider: string, locale: string, settings: typeof DEFAULT_SETTINGS, ble: { connected: boolean, connecting: boolean, deviceName: string, supported: boolean, repairRequired: boolean, repairing: boolean }, firmware: typeof DEFAULT_FIRMWARE_STATE, sync: { running: boolean, lastSync: string, status: string, error: string }, payload: object | null }}
      */
     getSnapshot() {
         return structuredClone(this.#state)

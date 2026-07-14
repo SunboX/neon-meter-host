@@ -43,6 +43,58 @@ test('AppView disables BLE connect and shows loader while connecting', () => {
     )
 })
 
+test('AppView shows BLE repair guidance only when pairing repair is required', () => {
+    const document = createFakeDocument()
+    const view = new AppView(document)
+    const calls = []
+    const snapshot = {
+        provider: 'auto',
+        locale: 'en',
+        settings: {
+            autoSync: false,
+            autoConnectBle: true,
+            startAtLogin: false,
+            startHidden: false,
+            syncIntervalMinutes: 5,
+            rotationSeconds: 30,
+            rememberedBleDeviceName: 'Neon Meter'
+        },
+        ble: {
+            connected: false,
+            connecting: false,
+            deviceName: '',
+            supported: true,
+            repairRequired: true,
+            repairing: false
+        },
+        sync: {
+            running: false,
+            status: 'Bluetooth pairing repair required',
+            error: '',
+            lastSync: ''
+        },
+        payload: null
+    }
+
+    view.bindOpenBluetoothSettings(() => calls.push('open-settings'))
+    view.render(snapshot)
+
+    assert.equal(document.node('#bleRepairPanel').hidden, false)
+    assert.match(document.node('#bleRepairMessage').textContent, /connect USB/i)
+    assert.match(
+        document.node('#bleRepairMessage').textContent,
+        /forget the old Neon Meter entry/i
+    )
+    document.node('#openBluetoothSettingsButton').click()
+    assert.deepEqual(calls, ['open-settings'])
+
+    view.render({
+        ...snapshot,
+        ble: { ...snapshot.ble, repairRequired: false }
+    })
+    assert.equal(document.node('#bleRepairPanel').hidden, true)
+})
+
 test('AppView resolves a selected BLE device from the chooser', async () => {
     const document = createFakeDocument()
     const view = new AppView(document)
@@ -350,6 +402,9 @@ function createFakeDocument() {
         '#connectButton',
         '#disconnectButton',
         '#syncButton',
+        '#bleRepairPanel',
+        '#bleRepairMessage',
+        '#openBluetoothSettingsButton',
         '#firmwareConnectedVersion',
         '#firmwareLatestVersion',
         '#firmwareStatus',

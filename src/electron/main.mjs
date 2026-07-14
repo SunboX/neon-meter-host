@@ -31,7 +31,8 @@ const {
     dialog,
     ipcMain,
     nativeImage,
-    session
+    session,
+    shell
 } = electron
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -445,6 +446,13 @@ function registerIpc() {
     })
     ipcMain.handle('firmware:latest-release', async () => {
         return fetchLatestFirmwareRelease()
+    })
+    ipcMain.handle('bluetooth:open-settings', async () => {
+        if (process.platform === 'darwin') {
+            await shell.openExternal(
+                'x-apple.systempreferences:com.apple.BluetoothSettings'
+            )
+        }
     })
 
     registerNativeBleIpc({

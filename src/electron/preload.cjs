@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('aiMeterHost', {
         ipcRenderer.invoke('provider:fetch-bundle', settings),
     fetchLatestFirmwareRelease: () =>
         ipcRenderer.invoke('firmware:latest-release'),
+    openBluetoothSettings: () => ipcRenderer.invoke('bluetooth:open-settings'),
     onFirmwareInstallerEvent: (callback) => {
         const listener = (_event, payload) => callback(payload)
         ipcRenderer.on('firmware:installer-event', listener)
