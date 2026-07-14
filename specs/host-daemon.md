@@ -20,7 +20,7 @@ M5Stack CoreS3 firmware over USB serial or BLE.
 - `claude`: reads Claude Code OAuth credentials and maps Anthropic unified
   5-hour and 7-day rate-limit headers to firmware percentages.
 - `chatgpt`: reads Codex auth and maps ChatGPT/Codex 5-hour and weekly quota
-  windows to firmware percentages.
+  windows by semantic key or exact duration, never by position alone.
 - Provider selection is automatic. When both providers are detected, both
   payloads are included in one firmware bundle.
 - `rotationSeconds`: defaults to `30` and controls firmware display rotation
@@ -52,8 +52,9 @@ characteristic:
   bridge, preferring USB and falling back to BLE.
 - Claude Code sync maps `s`, `sr`, `w`, `wr`, `detail`, and `ok` from provider
   rate-limit headers.
-- ChatGPT/Codex sync maps `s`, `sr`, `w`, `wr`, `detail`, and `ok` from quota
-  windows.
+- ChatGPT/Codex sync maps `se`, `s`, `sr`, `w`, `wr`, `detail`, and `ok` from
+  quota windows. A `604800`-second window always maps to Weekly, and Session is
+  omitted from the device and status bar when `se` is false.
 - Host settings allow changing the display rotation interval without requiring
   provider configuration.
 - Settings persist locally, excluding credentials.

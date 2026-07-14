@@ -10,6 +10,7 @@ test('buildFirmwarePayload clamps percentages and emits compact firmware fields'
     const payload = buildFirmwarePayload({
         provider: 'claude',
         title: 'Claude Code',
+        sessionEnabled: false,
         currentPercent: 137,
         currentLabel: 'Today',
         currentResetMinutes: 54,
@@ -24,6 +25,7 @@ test('buildFirmwarePayload clamps percentages and emits compact firmware fields'
     assert.deepEqual(payload, {
         p: 'claude',
         title: 'Claude Code',
+        se: false,
         s: 100,
         sl: 'Today',
         sr: 54,
@@ -45,6 +47,7 @@ test('buildFirmwarePayload falls back to provider defaults and limits detail tex
     })
 
     assert.equal(payload.title, 'ChatGPT')
+    assert.equal(payload.se, true)
     assert.equal(payload.sl, 'Current')
     assert.equal(payload.wl, 'Weekly')
     assert.equal(payload.s, 46)

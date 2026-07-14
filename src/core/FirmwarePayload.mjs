@@ -5,6 +5,7 @@ const DETAIL_LIMIT = 48
  * @param {{
  * provider?: string,
  * title?: string,
+ * sessionEnabled?: boolean,
  * currentPercent?: number,
  * currentLabel?: string,
  * currentResetMinutes?: number,
@@ -15,13 +16,14 @@ const DETAIL_LIMIT = 48
  * detail?: string,
  * ok?: boolean
  * }} input
- * @returns {{ p: string, title: string, s: number, sl: string, sr: number, w: number, wl: string, wr: number, st: string, detail: string, ok: boolean }}
+ * @returns {{ p: string, title: string, se: boolean, s: number, sl: string, sr: number, w: number, wl: string, wr: number, st: string, detail: string, ok: boolean }}
  */
 export function buildFirmwarePayload(input = {}) {
     const provider = normalizeText(input.provider, 'claude').toLowerCase()
     return {
         p: provider,
         title: normalizeText(input.title, defaultTitle(provider)),
+        se: input.sessionEnabled !== false,
         s: clampPercent(input.currentPercent),
         sl: normalizeText(input.currentLabel, 'Current'),
         sr: normalizeMinutes(input.currentResetMinutes),

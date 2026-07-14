@@ -84,6 +84,40 @@ test('buildTrayQuotaStatus summarizes provider utilization for the tray', () => 
     )
 })
 
+test('buildTrayQuotaStatus omits Session when it is unavailable', () => {
+    const summary = buildTrayQuotaStatus({
+        providers: [
+            {
+                p: 'chatgpt',
+                title: 'ChatGPT',
+                se: false,
+                s: 0,
+                sl: 'Session',
+                sr: -1,
+                w: 52,
+                wl: 'Weekly',
+                wr: 7942,
+                st: 'ok',
+                detail: '7d 52%',
+                ok: true
+            }
+        ]
+    })
+
+    assert.equal(summary.title, 'W 48%')
+    assert.deepEqual(summary.gauges, [
+        {
+            label: 'W',
+            valueText: '48%',
+            fillPercent: 48,
+            color: '#ffd75e'
+        }
+    ])
+    assert.match(summary.tooltip, /ChatGPT: Weekly 48% \(5d 12h left\)/)
+    assert.doesNotMatch(summary.tooltip, /Session/)
+    assert.equal(summary.menuItems[1].label, 'ChatGPT: Weekly 48%')
+})
+
 test('buildTrayQuotaStatus mirrors Neon Meter remaining capacity gauges', () => {
     const summary = buildTrayQuotaStatus({
         providers: [

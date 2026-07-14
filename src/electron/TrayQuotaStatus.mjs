@@ -151,10 +151,11 @@ function selectTrayProvider(providers) {
  * @returns {number}
  */
 function providerUrgency(provider) {
-    return Math.max(
-        usedPercent(provider.s, provider.sr),
-        usedPercent(provider.w, provider.wr)
-    )
+    const values = [usedPercent(provider.w, provider.wr)]
+    if (provider.se !== false) {
+        values.push(usedPercent(provider.s, provider.sr))
+    }
+    return Math.max(...values)
 }
 
 /**
@@ -163,10 +164,12 @@ function providerUrgency(provider) {
  * @returns {Array<{ label: string, valueText: string, fillPercent: number, color: string }>}
  */
 function buildGauges(provider) {
-    return [
-        buildGauge('S', provider, 's', 'sr'),
-        buildGauge('W', provider, 'w', 'wr')
-    ]
+    const gauges = []
+    if (provider.se !== false) {
+        gauges.push(buildGauge('S', provider, 's', 'sr'))
+    }
+    gauges.push(buildGauge('W', provider, 'w', 'wr'))
+    return gauges
 }
 
 /**
@@ -219,6 +222,9 @@ function menuLine(provider) {
             resetSuffix(provider.wr)
         )
     }
+    if (provider.se === false) {
+        return name + ': ' + windowPercent(provider, 'w', 'wr', 'Weekly')
+    }
     if (usedPercent(provider.s, provider.sr) >= 100) {
         return (
             name +
@@ -245,6 +251,9 @@ function menuLine(provider) {
 function tooltipLine(provider) {
     const name = providerName(provider)
     if (provider.ok === false) return name + ': ' + errorDetail(provider)
+    if (provider.se === false) {
+        return name + ': ' + windowDetail(provider, 'w', 'wr', 'Weekly')
+    }
     return (
         name +
         ': ' +

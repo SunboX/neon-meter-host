@@ -1,6 +1,8 @@
 import { buildFirmwarePayload } from '../core/FirmwarePayload.mjs'
 
 const USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage'
+const SESSION_WINDOW_SECONDS = 5 * 60 * 60
+const WEEKLY_WINDOW_SECONDS = 7 * 24 * 60 * 60
 
 /**
  * Fetches ChatGPT/Codex quota metadata and maps it to the CoreS3 payload.
@@ -114,10 +116,19 @@ export function parseChatGptUsagePayload(raw, now = new Date()) {
 
     const currentPercent = sessionPercent ?? 0
     const windowPercent = weeklyPercent ?? 0
+    const sessionEnabled = sessionPercent !== null
+    const detail = sessionEnabled
+        ? '5h ' +
+          Math.round(currentPercent) +
+          '% / 7d ' +
+          Math.round(windowPercent) +
+          '%'
+        : '7d ' + Math.round(windowPercent) + '%'
 
     return buildFirmwarePayload({
         provider: 'chatgpt',
         title: 'ChatGPT',
+        sessionEnabled,
         currentLabel: 'Session',
         currentPercent,
         currentResetMinutes: resetMinutes(resetFromWindow(sessionWindow), now),
@@ -125,12 +136,7 @@ export function parseChatGptUsagePayload(raw, now = new Date()) {
         windowPercent,
         windowResetMinutes: resetMinutes(resetFromWindow(weeklyWindow), now),
         status: 'ok',
-        detail:
-            '5h ' +
-            Math.round(currentPercent) +
-            '% / 7d ' +
-            Math.round(windowPercent) +
-            '%',
+        detail,
         ok: true
     })
 }
@@ -146,14 +152,12 @@ function findQuotaWindow(raw, kind) {
     const source = /** @type {Record<string, unknown>} */ (raw)
     const explicitKeys =
         kind === 'session'
-            ? ['five_hour', 'five_hour_limit', 'primary_window', 'session']
-            : ['weekly', 'weekly_limit', 'secondary_window', 'week']
+            ? ['five_hour', 'five_hour_limit', 'session']
+            : ['weekly', 'weekly_limit', 'week']
 
     for (const key of explicitKeys) {
-        const value = source[key]
-        if (value && typeof value === 'object') {
-            return /** @type {Record<string, unknown>} */ (value)
-        }
+        const value = objectValue(source[key])
+        if (value && durationMatches(value, kind) !== false) return value
     }
 
     const candidates = collectObjects(source, '')
@@ -164,7 +168,7 @@ function findQuotaWindow(raw, kind) {
         .filter((candidate) => candidate.score > 0)
         .sort((a, b) => b.score - a.score)
 
-    return candidates[0]?.value || null
+    return candidates[0]?.value || legacyPositionalWindow(source, kind)
 }
 
 /**
@@ -176,13 +180,70 @@ function findQuotaWindow(raw, kind) {
  */
 function quotaScore(path, value, kind) {
     const text = (path + ' ' + Object.keys(value).join(' ')).toLowerCase()
-    const hasPercent = percentFromWindow(value) !== null
-    if (!hasPercent) return 0
+    if (percentFromWindow(value) === null) return 0
 
-    if (kind === 'session') {
-        return scoreTerms(text, ['five', '5h', '5_hour', 'session', 'primary'])
+    const durationMatch = durationMatches(value, kind)
+    if (durationMatch === false) return 0
+    const semanticScore =
+        kind === 'session'
+            ? scoreTerms(text, ['five', '5h', '5_hour', 'session'])
+            : scoreTerms(text, ['week', 'weekly', '7d', '7_day'])
+    return (durationMatch === true ? 100 : 0) + semanticScore
+}
+
+/**
+ * Returns a legacy positional window only when both positions are unambiguous.
+ * @param {Record<string, unknown>} source
+ * @param {'session' | 'weekly'} kind
+ * @returns {Record<string, unknown> | null}
+ */
+function legacyPositionalWindow(source, kind) {
+    const container = objectValue(source.rate_limit) || source
+    const primary = objectValue(container.primary_window)
+    const secondary = objectValue(container.secondary_window)
+    if (!primary || !secondary) return null
+    if (
+        windowDurationSeconds(primary) !== null ||
+        windowDurationSeconds(secondary) !== null
+    ) {
+        return null
     }
-    return scoreTerms(text, ['week', 'weekly', '7d', '7_day', 'secondary'])
+    return kind === 'session' ? primary : secondary
+}
+
+/**
+ * Reads the declared quota-window duration in seconds.
+ * @param {Record<string, unknown> | null} window
+ * @returns {number | null}
+ */
+function windowDurationSeconds(window) {
+    if (!window) return null
+    return numberFromKeys(window, ['limit_window_seconds', 'window_seconds'])
+}
+
+/**
+ * Compares a declared duration with the requested quota-window kind.
+ * @param {Record<string, unknown>} window
+ * @param {'session' | 'weekly'} kind
+ * @returns {boolean | null}
+ */
+function durationMatches(window, kind) {
+    const seconds = windowDurationSeconds(window)
+    if (seconds === null) return null
+    return kind === 'session'
+        ? seconds === SESSION_WINDOW_SECONDS
+        : seconds === WEEKLY_WINDOW_SECONDS
+}
+
+/**
+ * Returns a plain object record or null.
+ * @param {unknown} value
+ * @returns {Record<string, unknown> | null}
+ */
+function objectValue(value) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? /** @type {Record<string, unknown>} */ (value)
+        : null
 }
 
 /**

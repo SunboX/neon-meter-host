@@ -37,6 +37,7 @@ test('parseChatGptUsagePayload maps quota windows to firmware fields', () => {
 
     assert.equal(payload.p, 'chatgpt')
     assert.equal(payload.title, 'ChatGPT')
+    assert.equal(payload.se, true)
     assert.equal(payload.s, 36)
     assert.equal(payload.sl, 'Session')
     assert.equal(payload.sr, 120)
@@ -53,10 +54,12 @@ test('parseChatGptUsagePayload keeps integer percent fields as percentages', () 
                 allowed: true,
                 primary_window: {
                     used_percent: 6,
+                    limit_window_seconds: 18000,
                     reset_at: 1778853600
                 },
                 secondary_window: {
                     used_percent: 1,
+                    limit_window_seconds: 604800,
                     reset_at: 1779026400
                 }
             }
@@ -64,9 +67,52 @@ test('parseChatGptUsagePayload keeps integer percent fields as percentages', () 
         new Date('2026-05-15T12:00:00Z')
     )
 
+    assert.equal(payload.se, true)
     assert.equal(payload.s, 6)
     assert.equal(payload.w, 1)
     assert.equal(payload.detail, '5h 6% / 7d 1%')
+})
+
+test('parseChatGptUsagePayload keeps a lone seven-day primary window in Weekly', () => {
+    const payload = parseChatGptUsagePayload(
+        {
+            rate_limit: {
+                allowed: true,
+                limit_reached: false,
+                primary_window: {
+                    used_percent: 52,
+                    limit_window_seconds: 604800,
+                    reset_after_seconds: 476467,
+                    reset_at: 1784487611
+                },
+                secondary_window: null
+            }
+        },
+        new Date('2026-07-14T06:39:05Z')
+    )
+
+    assert.equal(payload.se, false)
+    assert.equal(payload.s, 0)
+    assert.equal(payload.sr, -1)
+    assert.equal(payload.w, 52)
+    assert.equal(payload.wr, 7942)
+    assert.equal(payload.detail, '7d 52%')
+    assert.equal(payload.ok, true)
+})
+
+test('parseChatGptUsagePayload rejects a lone positional window without a duration', () => {
+    const payload = parseChatGptUsagePayload({
+        rate_limit: {
+            primary_window: {
+                used_percent: 52,
+                reset_at: 1784487611
+            },
+            secondary_window: null
+        }
+    })
+
+    assert.equal(payload.ok, false)
+    assert.match(payload.detail, /not recognized/)
 })
 
 test('ChatGptUsageProvider calls wham usage with Codex auth headers', async () => {

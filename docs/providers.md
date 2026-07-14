@@ -28,8 +28,11 @@ payloads in one firmware bundle and the device rotates between them.
     - `$CODEX_HOME/auth.json` when `CODEX_HOME` is set
     - `~/.codex/auth.json` otherwise
 - Quota probe: `GET https://chatgpt.com/backend-api/wham/usage`.
-- Usage fields are mapped from the returned 5-hour/session and weekly windows
-  when present.
+- Usage windows are classified by semantic keys and exact declared durations:
+  `18000` seconds is Session and `604800` seconds is Weekly. Window position is
+  not used when a declared duration is available.
+- When Session is absent, the payload sets `se` to `false`, keeps the Weekly
+  data in `w` and `wr`, and omits Session from rendered status.
 
 ## Firmware Payload
 
@@ -39,6 +42,7 @@ Each provider maps into the same compact firmware payload:
 {
     "p": "claude",
     "title": "Claude Code",
+    "se": true,
     "s": 46,
     "sl": "Session",
     "sr": 120,
@@ -60,6 +64,7 @@ The host sends one or two of those payloads in a provider bundle:
         {
             "p": "claude",
             "title": "Claude Code",
+            "se": true,
             "s": 46,
             "sl": "Session",
             "sr": 120,
@@ -73,3 +78,24 @@ The host sends one or two of those payloads in a provider bundle:
     ]
 }
 ```
+
+ChatGPT with no Session window keeps only the Weekly quota visible:
+
+```json
+{
+    "p": "chatgpt",
+    "title": "ChatGPT",
+    "se": false,
+    "s": 0,
+    "sl": "Session",
+    "sr": -1,
+    "w": 52,
+    "wl": "Weekly",
+    "wr": 7942,
+    "st": "ok",
+    "detail": "7d 52%",
+    "ok": true
+}
+```
+
+Missing `se` means Session is available for compatibility with older payloads.

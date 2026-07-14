@@ -97,6 +97,7 @@ providers are present.
         {
             "p": "claude",
             "title": "Claude Code",
+            "se": true,
             "s": 46,
             "sl": "Session",
             "sr": 120,
@@ -110,6 +111,7 @@ providers are present.
         {
             "p": "chatgpt",
             "title": "ChatGPT",
+            "se": true,
             "s": 22,
             "sl": "Session",
             "sr": 90,
@@ -127,3 +129,24 @@ providers are present.
 The firmware still accepts a single compact provider object for compatibility.
 Payloads are generated in `src/core/FirmwarePayload.mjs` and wrapped by
 `src/core/ProviderBundle.mjs`.
+
+The additive `se` field reports whether a real Session window is available.
+Missing `se` means `true` for compatibility. When `se` is `false`, renderers
+hide Session completely and continue to use the real Weekly fields:
+
+```json
+{
+    "p": "chatgpt",
+    "title": "ChatGPT",
+    "se": false,
+    "s": 0,
+    "sl": "Session",
+    "sr": -1,
+    "w": 52,
+    "wl": "Weekly",
+    "wr": 7942,
+    "st": "ok",
+    "detail": "7d 52%",
+    "ok": true
+}
+```
