@@ -198,12 +198,57 @@ test('PreferredAiMeterClient waits for active transport disconnect to finish', a
     assert.equal(disconnectFinished, true)
 })
 
+test('PreferredAiMeterClient repairs BLE pairing through a capable USB device', async () => {
+    const usbClient = new FakeDeviceClient({
+        device: {
+            id: 'usb:/dev/cu.usbmodem101',
+            name: 'Neon Meter USB',
+            connected: true,
+            transport: 'usb',
+            capabilities: ['ble-repair']
+        },
+        repairResult: { accepted: true }
+    })
+    const bleClient = new FakeDeviceClient()
+    const client = new PreferredAiMeterClient({ usbClient, bleClient })
+
+    const result = await client.repairBlePairing()
+
+    assert.deepEqual(result, { accepted: true })
+    assert.equal(usbClient.connectCalls, 1)
+    assert.equal(usbClient.repairCalls, 1)
+    assert.equal(bleClient.connectCalls, 0)
+})
+
+test('PreferredAiMeterClient does not send repair to unsupported USB firmware', async () => {
+    const usbClient = new FakeDeviceClient({
+        device: {
+            id: 'usb:/dev/cu.usbmodem101',
+            name: 'Neon Meter USB',
+            connected: true,
+            transport: 'usb',
+            capabilities: []
+        }
+    })
+    const client = new PreferredAiMeterClient({
+        usbClient,
+        bleClient: new FakeDeviceClient()
+    })
+
+    assert.deepEqual(await client.repairBlePairing(), {
+        accepted: false,
+        reason: 'unsupported'
+    })
+    assert.equal(usbClient.repairCalls, 0)
+})
+
 class FakeDeviceClient extends EventTarget {
     connectCalls = 0
     rememberedCalls = []
     selectedCalls = []
     payloads = []
     disconnected = false
+    repairCalls = 0
 
     constructor(options = {}) {
         super()
@@ -242,6 +287,16 @@ class FakeDeviceClient extends EventTarget {
 
     async writePayload(payload) {
         this.payloads.push(payload)
+    }
+
+    async repairBlePairing() {
+        this.repairCalls += 1
+        return (
+            this.options.repairResult || {
+                accepted: false,
+                reason: 'unsupported'
+            }
+        )
     }
 }
 

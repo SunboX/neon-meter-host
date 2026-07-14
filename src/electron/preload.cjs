@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('aiMeterHost', {
     bleDisconnect: () => ipcRenderer.invoke('ble:disconnect'),
     bleWritePayload: (payload) =>
         ipcRenderer.invoke('ble:write-payload', payload),
+    bleRepairPairing: () => ipcRenderer.invoke('ble:repair-pairing'),
     onBleEvent: (callback) => {
         const listener = (_event, payload) => callback(payload)
         ipcRenderer.on('ble:event', listener)

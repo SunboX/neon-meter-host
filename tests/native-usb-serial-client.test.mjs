@@ -26,7 +26,8 @@ test('NativeUsbSerialAiMeterClient connects with hello and writes payload frames
         connected: true,
         transport: 'usb',
         firmwareVersion: '1.0.1',
-        chipFamily: 'ESP32-S3'
+        chipFamily: 'ESP32-S3',
+        capabilities: []
     })
     assert.equal(
         port.writes[0],
@@ -35,6 +36,75 @@ test('NativeUsbSerialAiMeterClient connects with hello and writes payload frames
     assert.equal(
         port.writes.at(-1),
         '{"type":"payload","payload":{"rotationSeconds":30,"providers":[]}}\n'
+    )
+})
+
+test('NativeUsbSerialAiMeterClient repairs BLE pairing through a supported USB device', async () => {
+    const serialportModule = createFakeSerialportModule([
+        {
+            path: '/dev/cu.usbmodem101',
+            manufacturer: 'Espressif',
+            hello: '{"type":"hello","protocol":"neon-meter-usb","version":1,"device":"Neon Meter","firmwareVersion":"1.0.7","capabilities":["ble-repair","",null]}\n',
+            repairResponse: '{"type":"ble-repair-accepted","ok":true}\n'
+        }
+    ])
+    const client = new NativeUsbSerialAiMeterClient({
+        serialportModule,
+        probeTimeoutMs: 20
+    })
+
+    const device = await client.connect()
+    const repair = await client.repairBlePairing()
+    const port = serialportModule.instances[0]
+
+    assert.deepEqual(device.capabilities, ['ble-repair'])
+    assert.equal(port.writes.at(-1), '{"type":"ble-repair"}\n')
+    assert.deepEqual(repair, { accepted: true })
+})
+
+test('NativeUsbSerialAiMeterClient reports unsupported BLE repair without writing', async () => {
+    const serialportModule = createFakeSerialportModule([
+        {
+            path: '/dev/cu.usbmodem101',
+            manufacturer: 'Espressif',
+            hello: '{"type":"hello","protocol":"neon-meter-usb","version":1,"device":"Neon Meter"}\n'
+        }
+    ])
+    const client = new NativeUsbSerialAiMeterClient({
+        serialportModule,
+        probeTimeoutMs: 20
+    })
+
+    await client.connect()
+    const port = serialportModule.instances[0]
+    const writeCount = port.writes.length
+
+    assert.deepEqual(await client.repairBlePairing(), {
+        accepted: false,
+        reason: 'unsupported'
+    })
+    assert.equal(port.writes.length, writeCount)
+})
+
+test('NativeUsbSerialAiMeterClient bounds the BLE repair response wait', async () => {
+    const serialportModule = createFakeSerialportModule([
+        {
+            path: '/dev/cu.usbmodem101',
+            manufacturer: 'Espressif',
+            hello: '{"type":"hello","protocol":"neon-meter-usb","version":1,"device":"Neon Meter","capabilities":["ble-repair"]}\n'
+        }
+    ])
+    const client = new NativeUsbSerialAiMeterClient({
+        serialportModule,
+        probeTimeoutMs: 20,
+        repairTimeoutMs: 5
+    })
+
+    await client.connect()
+
+    await assert.rejects(
+        () => client.repairBlePairing(),
+        /BLE repair response timed out/
     )
 })
 
@@ -250,8 +320,17 @@ function createFakeSerialportModule(fixtures) {
         }
 
         write(data, callback) {
-            this.writes.push(Buffer.from(data).toString('utf8'))
-            queueMicrotask(() => callback?.(null))
+            const text = Buffer.from(data).toString('utf8')
+            this.writes.push(text)
+            queueMicrotask(() => {
+                callback?.(null)
+                if (
+                    text === '{"type":"ble-repair"}\n' &&
+                    this.fixture.repairResponse
+                ) {
+                    this.emit('data', Buffer.from(this.fixture.repairResponse))
+                }
+            })
         }
 
         close(callback) {

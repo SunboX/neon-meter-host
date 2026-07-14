@@ -8,7 +8,7 @@ export class PreferredAiMeterClient extends EventTarget {
     #disconnectingClient = null
 
     /**
-     * @param {{ usbClient: EventTarget & { isSupported: () => boolean, connect: () => Promise<object>, disconnect: () => void | Promise<void>, writePayload: (payload: object) => Promise<void> }, bleClient: EventTarget & { isSupported: () => boolean, connect: () => Promise<object>, connectSelected?: (device: object) => Promise<object>, connectRemembered?: (device: object) => Promise<object | null>, disconnect: () => void | Promise<void>, writePayload: (payload: object) => Promise<void> } }} dependencies
+     * @param {{ usbClient: EventTarget & { isSupported: () => boolean, connect: () => Promise<object>, disconnect: () => void | Promise<void>, writePayload: (payload: object) => Promise<void>, repairBlePairing?: () => Promise<object> }, bleClient: EventTarget & { isSupported: () => boolean, connect: () => Promise<object>, connectSelected?: (device: object) => Promise<object>, connectRemembered?: (device: object) => Promise<object | null>, disconnect: () => void | Promise<void>, writePayload: (payload: object) => Promise<void> } }} dependencies
      */
     constructor(dependencies) {
         super()
@@ -106,6 +106,24 @@ export class PreferredAiMeterClient extends EventTarget {
             throw new Error('Neon Meter is not connected')
         }
         await this.#activeClient.writePayload(payload)
+    }
+
+    /**
+     * Probes USB and delegates pairing repair to capable firmware.
+     * @returns {Promise<{ accepted: boolean, reason?: string }>}
+     */
+    async repairBlePairing() {
+        const usbDevice = await this.#tryUsbConnect()
+        if (
+            !usbDevice ||
+            typeof this.#usbClient.repairBlePairing !== 'function'
+        ) {
+            return { accepted: false, reason: 'usb-unavailable' }
+        }
+        if (!usbDevice.capabilities?.includes('ble-repair')) {
+            return { accepted: false, reason: 'unsupported' }
+        }
+        return this.#usbClient.repairBlePairing()
     }
 
     /**

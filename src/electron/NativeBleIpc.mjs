@@ -1,6 +1,6 @@
 /**
  * Registers legacy-named IPC handlers for the main-process device transport.
- * @param {{ ipcMain: Electron.IpcMain, bleClient: EventTarget & { isSupported: () => boolean, canConnectWithoutRemembered?: () => boolean, connect: () => Promise<object>, connectSelected: (device: object) => Promise<object>, connectRemembered: (device: object) => Promise<object | null>, disconnect: () => void, writePayload: (payload: object) => Promise<void> }, getWebContents: () => Electron.WebContents[] }} dependencies
+ * @param {{ ipcMain: Electron.IpcMain, bleClient: EventTarget & { isSupported: () => boolean, canConnectWithoutRemembered?: () => boolean, connect: () => Promise<object>, connectSelected: (device: object) => Promise<object>, connectRemembered: (device: object) => Promise<object | null>, disconnect: () => void, writePayload: (payload: object) => Promise<void>, repairBlePairing: () => Promise<object> }, getWebContents: () => Electron.WebContents[] }} dependencies
  * @returns {void}
  */
 export function registerNativeBleIpc(dependencies) {
@@ -25,6 +25,9 @@ export function registerNativeBleIpc(dependencies) {
     ipcMain.handle('ble:write-payload', (_event, payload) =>
         bleClient.writePayload(payload)
     )
+    ipcMain.handle('ble:repair-pairing', () =>
+        deviceOperation(() => bleClient.repairBlePairing())
+    )
 
     for (const eventName of ['ack', 'refresh-requested', 'disconnected']) {
         bleClient.addEventListener(eventName, (event) => {
@@ -48,8 +51,7 @@ async function deviceOperation(callback) {
         return {
             operationError: {
                 code: String(error?.code || 'DEVICE_OPERATION_FAILED'),
-                message:
-                    error instanceof Error ? error.message : String(error),
+                message: error instanceof Error ? error.message : String(error),
                 deviceId: String(error?.deviceId || ''),
                 deviceName: String(error?.deviceName || '')
             }

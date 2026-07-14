@@ -12,11 +12,13 @@ test('IpcBleClient delegates BLE operations to the preload bridge', async () => 
         name: 'Neon Meter',
         connected: true
     })
+    assert.deepEqual(await client.repairBlePairing(), { accepted: true })
     await client.writePayload({ hello: 'ipc' })
     client.disconnect()
 
     assert.deepEqual(bridge.calls, [
         ['connectRemembered', { id: 'device-1' }],
+        ['repairBlePairing'],
         ['writePayload', { hello: 'ipc' }],
         ['disconnect']
     ])
@@ -172,6 +174,11 @@ class FakeBridge {
 
     async bleWritePayload(payload) {
         this.calls.push(['writePayload', payload])
+    }
+
+    async bleRepairPairing() {
+        this.calls.push(['repairBlePairing'])
+        return { accepted: true }
     }
 
     onBleEvent(listener) {

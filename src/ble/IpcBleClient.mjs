@@ -85,6 +85,14 @@ export class IpcBleClient extends EventTarget {
     }
 
     /**
+     * Requests stale BLE pairing recovery through the native USB transport.
+     * @returns {Promise<{ accepted: boolean, reason?: string }>}
+     */
+    async repairBlePairing() {
+        return unwrapDeviceOperation(await this.#bridge.bleRepairPairing())
+    }
+
+    /**
      * Stops receiving forwarded native device events.
      * @returns {void}
      */

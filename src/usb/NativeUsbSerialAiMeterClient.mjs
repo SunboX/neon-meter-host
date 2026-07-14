@@ -6,7 +6,9 @@ const PROTOCOL_VERSION = 1
 const BAUD_RATE = 115200
 const HELLO_FRAME = '{"type":"hello","protocol":"neon-meter-usb","version":1}\n'
 const PING_FRAME = '{"type":"ping","protocol":"neon-meter-usb","version":1}\n'
+const BLE_REPAIR_FRAME = '{"type":"ble-repair"}\n'
 const HEARTBEAT_INTERVAL_MS = 5000
+const BLE_REPAIR_TIMEOUT_MS = 3000
 const DEVICE_NAME = 'Neon Meter USB'
 
 /**
@@ -17,6 +19,7 @@ export class NativeUsbSerialAiMeterClient extends EventTarget {
     #loadError = null
     #timers
     #probeTimeoutMs
+    #repairTimeoutMs
     #port = null
     #portInfo = null
     #lineBuffer = ''
@@ -26,9 +29,10 @@ export class NativeUsbSerialAiMeterClient extends EventTarget {
     #heartbeatTimer = null
     #deviceMetadata = {}
     #lastHelloMetadata = {}
+    #repairWaiter = null
 
     /**
-     * @param {{ serialportModule?: object, timers?: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout' | 'setInterval' | 'clearInterval'>, probeTimeoutMs?: number }} [options]
+     * @param {{ serialportModule?: object, timers?: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout' | 'setInterval' | 'clearInterval'>, probeTimeoutMs?: number, repairTimeoutMs?: number }} [options]
      */
     constructor(options = {}) {
         super()
@@ -53,6 +57,13 @@ export class NativeUsbSerialAiMeterClient extends EventTarget {
                 : globalThis.clearInterval.bind(globalThis)
         }
         this.#probeTimeoutMs = Number(options.probeTimeoutMs) || 8000
+        const repairTimeoutMs = Number(
+            options.repairTimeoutMs ?? BLE_REPAIR_TIMEOUT_MS
+        )
+        this.#repairTimeoutMs =
+            Number.isFinite(repairTimeoutMs) && repairTimeoutMs > 0
+                ? repairTimeoutMs
+                : BLE_REPAIR_TIMEOUT_MS
     }
 
     /**
@@ -112,6 +123,37 @@ export class NativeUsbSerialAiMeterClient extends EventTarget {
                 payload
             }) + '\n'
         )
+    }
+
+    /**
+     * Requests bond clearing and BLE identity rotation over USB.
+     * @returns {Promise<{ accepted: boolean, reason?: string }>}
+     */
+    async repairBlePairing() {
+        if (!this.#port) throw new Error('Neon Meter USB is not connected')
+        if (!this.#deviceMetadata.capabilities?.includes('ble-repair')) {
+            return { accepted: false, reason: 'unsupported' }
+        }
+        if (this.#repairWaiter) {
+            throw new Error('Neon Meter BLE repair is already pending')
+        }
+
+        const response = new Promise((resolve, reject) => {
+            const timeoutId = this.#timers.setTimeout(() => {
+                this.#settleRepairWaiter(
+                    null,
+                    new Error('Neon Meter BLE repair response timed out')
+                )
+            }, this.#repairTimeoutMs)
+            this.#repairWaiter = { resolve, reject, timeoutId }
+        })
+
+        try {
+            await writePort(this.#port, BLE_REPAIR_FRAME)
+        } catch (error) {
+            this.#settleRepairWaiter(null, error)
+        }
+        return response
     }
 
     /**
@@ -236,6 +278,10 @@ export class NativeUsbSerialAiMeterClient extends EventTarget {
             this.#lastHelloMetadata = normalizeDeviceMetadata(json)
             return 'hello'
         }
+        if (json.type === 'ble-repair-accepted' && json.ok === true) {
+            this.#settleRepairWaiter({ accepted: true })
+            return 'ble-repair-accepted'
+        }
         if (json.type === 'refresh-requested') {
             this.dispatchEvent(new CustomEvent('refresh-requested'))
             return 'refresh-requested'
@@ -265,6 +311,10 @@ export class NativeUsbSerialAiMeterClient extends EventTarget {
      */
     #clearPort() {
         this.#stopHeartbeat()
+        this.#settleRepairWaiter(
+            null,
+            new Error('Neon Meter USB disconnected during BLE repair')
+        )
         if (this.#port && this.#dataHandler) {
             this.#port.removeListener?.('data', this.#dataHandler)
         }
@@ -282,6 +332,26 @@ export class NativeUsbSerialAiMeterClient extends EventTarget {
         this.#errorHandler = null
         this.#deviceMetadata = {}
         this.#lastHelloMetadata = {}
+    }
+
+    /**
+     * Resolves or rejects the active BLE repair response waiter once.
+     * @param {{ accepted: true } | null} result
+     * @param {unknown} [error]
+     * @returns {void}
+     */
+    #settleRepairWaiter(result, error = null) {
+        const waiter = this.#repairWaiter
+        if (!waiter) return
+        this.#repairWaiter = null
+        this.#timers.clearTimeout(waiter.timeoutId)
+        if (error) {
+            waiter.reject(
+                error instanceof Error ? error : new Error(String(error))
+            )
+            return
+        }
+        waiter.resolve(result)
     }
 
     /**
@@ -432,15 +502,21 @@ function isHelloFrame(json) {
 /**
  * Returns non-secret firmware metadata from a device control frame.
  * @param {unknown} source
- * @returns {{ firmwareVersion?: string, chipFamily?: string }}
+ * @returns {{ firmwareVersion?: string, chipFamily?: string, capabilities: string[] }}
  */
 function normalizeDeviceMetadata(source) {
     const metadata = source && typeof source === 'object' ? source : {}
     const firmwareVersion = String(metadata.firmwareVersion || '').trim()
     const chipFamily = String(metadata.chipFamily || '').trim()
+    const capabilities = Array.isArray(metadata.capabilities)
+        ? metadata.capabilities
+              .map((value) => String(value || '').trim())
+              .filter(Boolean)
+        : []
     return {
         ...(firmwareVersion ? { firmwareVersion } : {}),
-        ...(chipFamily ? { chipFamily } : {})
+        ...(chipFamily ? { chipFamily } : {}),
+        capabilities
     }
 }
 

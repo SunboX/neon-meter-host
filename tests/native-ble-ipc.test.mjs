@@ -47,6 +47,9 @@ test('registerNativeBleIpc exposes native BLE handlers', async () => {
         }
     )
     await ipcMain.handlers.get('ble:write-payload')({}, { hello: 'native' })
+    assert.deepEqual(await ipcMain.handlers.get('ble:repair-pairing')(), {
+        accepted: true
+    })
     await ipcMain.handlers.get('ble:disconnect')()
 
     assert.deepEqual(bleClient.calls, [
@@ -54,6 +57,7 @@ test('registerNativeBleIpc exposes native BLE handlers', async () => {
         ['connectRemembered', { id: 'native-2' }],
         ['connectSelected', { id: 'native-3' }],
         ['writePayload', { hello: 'native' }],
+        ['repairBlePairing'],
         ['disconnect']
     ])
 })
@@ -170,6 +174,11 @@ class FakeBleClient extends EventTarget {
 
     async writePayload(payload) {
         this.calls.push(['writePayload', payload])
+    }
+
+    async repairBlePairing() {
+        this.calls.push(['repairBlePairing'])
+        return { accepted: true }
     }
 }
 
