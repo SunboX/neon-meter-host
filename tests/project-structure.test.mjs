@@ -94,20 +94,21 @@ test('native BLE packaging is configured for restart reconnect', async () => {
     )
 })
 
-test('firmware installer embeds ESP Web Tools and Web Serial handlers', async () => {
+test('firmware installer bundles ESP Web Tools locally with safe controls', async () => {
     const html = await readFile(new URL('src/index.html', root), 'utf8')
+    const renderer = await readFile(new URL('src/main.mjs', root), 'utf8')
     const preload = await readFile(
         new URL('src/electron/preload.cjs', root),
         'utf8'
     )
     const main = await readFile(new URL('src/electron/main.mjs', root), 'utf8')
 
-    assert.match(html, /esp-web-tools@10/)
-    assert.match(html, /esp-web-install-button/)
-    assert.match(
-        html,
-        /https:\/\/sunbox\.github\.io\/neon-meter\/manifest\.json/
-    )
+    assert.doesNotMatch(html, /unpkg\.com\/esp-web-tools/)
+    assert.doesNotMatch(html, /esp-web-install-button/)
+    assert.match(html, /id="firmwareInstallButton"/)
+    assert.match(html, /id="firmwareFactoryButton"/)
+    assert.match(renderer, /new SafeFirmwareInstaller/)
+    assert.match(renderer, /esp-web-tools-flash\.bundle\.mjs/)
     assert.match(main, /installSerialHandlers\(\)/)
     assert.match(main, /select-serial-port/)
     assert.match(main, /serial/)
@@ -125,7 +126,8 @@ test('package scripts include start and test', async () => {
 
     assert.equal(typeof pkg.scripts?.start, 'string')
     assert.equal(typeof pkg.scripts?.test, 'string')
-    assert.equal(pkg.scripts.start, 'node scripts/start-neon-meter.mjs')
+    assert.match(pkg.scripts.start, /build:firmware-installer/)
+    assert.match(pkg.scripts.start, /scripts\/start-neon-meter\.mjs/)
     assert.equal(pkg.scripts.dev, 'node scripts/start-neon-meter.mjs')
     assert.equal(pkg.scripts.test, 'node scripts/run-tests.mjs')
     assert.deepEqual(pkg.author, {

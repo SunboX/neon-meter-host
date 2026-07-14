@@ -5,6 +5,10 @@ import {
 import { compareSemver } from './firmware/FirmwareReleaseClient.mjs'
 import { BlePairingRecovery } from './ble/BlePairingRecovery.mjs'
 import { errorMessage } from './core/ErrorMessage.mjs'
+import {
+    firmwareProgressPercentage,
+    firmwareStatus
+} from './firmware/FirmwareUpdateState.mjs'
 
 /**
  * Coordinates renderer state, BLE writes, and provider refreshes.
@@ -26,7 +30,8 @@ export class AppController {
     #disposed = false
     #activeTransport = ''
     #allowDisconnectedUsbAutoConnect = false
-    #firmwareInstallerUnsubscribe = null
+    #firmwareInstaller = null
+    #latestFirmwareRelease = null
     #blePairingRecovery = new BlePairingRecovery()
 
     /**
@@ -36,6 +41,7 @@ export class AppController {
      * i18n?: { getLocale: () => string, setLocale: (locale: string) => Promise<void>, translate: (key: string) => string, applyToDom: (node: Document) => void } | null,
      * bridge: { getAppMeta: () => Promise<object>, loadSettings: () => Promise<object>, saveSettings: (settings: object) => Promise<object>, fetchProviderBundle: (settings?: object) => Promise<object>, fetchLatestFirmwareRelease?: () => Promise<object | null>, onFirmwareInstallerEvent?: (callback: (event: object) => void) => (() => void), openBluetoothSettings?: () => Promise<void> },
      * bleClient: EventTarget & { isSupported: () => boolean, canConnectWithoutRemembered?: () => boolean, connect: (options?: { selectDevice?: (devices: Array<{ id: string, name: string, rssi?: number }>) => Promise<object | string | null> }) => Promise<{ id?: string, name: string, connected: boolean, transport?: string }>, connectRemembered?: (device: { id?: string, name?: string }) => Promise<{ id?: string, name: string, connected: boolean, transport?: string } | null>, disconnect: () => void | Promise<void>, writePayload: (payload: object) => Promise<void>, repairBlePairing?: () => Promise<{ accepted: boolean, reason?: string }> },
+     * firmwareInstaller?: { install: (release: object, options: { factory: boolean, onProgress: (state: object) => void }) => Promise<object> },
      * timers?: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout' | 'setInterval' | 'clearInterval'>,
      * bleReconnectDelayMs?: number,
      * usbAutoConnectDelayMs?: number
@@ -47,6 +53,7 @@ export class AppController {
         this.#i18n = dependencies.i18n || null
         this.#bridge = dependencies.bridge
         this.#bleClient = dependencies.bleClient
+        this.#firmwareInstaller = dependencies.firmwareInstaller || null
         const timers = dependencies.timers || {}
         this.#timers = {
             setTimeout: timers.setTimeout
@@ -101,7 +108,6 @@ export class AppController {
         this.#view.setVersion(String(meta.version || ''))
         this.#bindView()
         this.#bindBle()
-        this.#bindFirmwareInstallerLifecycle()
         await this.#loadLatestFirmwareRelease()
         this.#scheduleSync()
         void this.#connectRememberedBleDevice()
@@ -117,8 +123,6 @@ export class AppController {
         this.#cancelBleReconnect()
         this.#cancelUsbAutoConnect()
         this.#cancelResetRefresh()
-        this.#firmwareInstallerUnsubscribe?.()
-        this.#firmwareInstallerUnsubscribe = null
         this.#blePairingRecovery.reset()
         this.#skipNextBleReconnect = true
         if (this.#syncTimer) this.#timers.clearInterval(this.#syncTimer)
@@ -136,30 +140,14 @@ export class AppController {
         this.#view.bindSettingsOpen(() => this.#view.openSettingsDialog())
         this.#view.bindSettingsCancel(() => this.#view.closeSettingsDialog())
         this.#view.bindSettingsSave((settings) => this.#saveSettings(settings))
-        this.#view.bindFirmwareInstallPrepare?.(() =>
-            this.#prepareFirmwareInstall()
+        this.#view.bindFirmwareInstall?.(() => this.#installFirmware(false))
+        this.#view.bindFirmwareFactoryInstall?.(() =>
+            this.#installFirmware(true)
         )
-        this.#view.bindFirmwareInstall?.(() => this.#prepareFirmwareInstall())
         this.#view.bindFirmwareRecheck?.(() => this.#recheckFirmware())
-        this.#view.bindFirmwareInstallerClosed?.((event) =>
-            this.#resumeAfterFirmwareInstaller(event)
-        )
         this.#view.bindOpenBluetoothSettings?.(() =>
             this.#bridge.openBluetoothSettings?.()
         )
-    }
-
-    /**
-     * Wires main-process firmware installer lifecycle events.
-     * @returns {void}
-     */
-    #bindFirmwareInstallerLifecycle() {
-        if (typeof this.#bridge.onFirmwareInstallerEvent !== 'function') return
-        this.#firmwareInstallerUnsubscribe =
-            this.#bridge.onFirmwareInstallerEvent((event) => {
-                if (event?.type !== 'serial-canceled') return
-                this.#resumeAfterFirmwareInstaller(event)
-            })
     }
 
     /**
@@ -529,24 +517,43 @@ export class AppController {
     #setConnectedFirmware(device) {
         const connectedVersion = String(device?.firmwareVersion || '')
         const connectedChipFamily = String(device?.chipFamily || '')
-        const latestVersion = this.#state.getSnapshot().firmware.latestVersion
+        const currentFirmware = this.#state.getSnapshot().firmware
+        const latestVersion = currentFirmware.latestVersion
+        const verificationPending = currentFirmware.verificationPending
         const updateAvailable = Boolean(
             latestVersion &&
             (!connectedVersion ||
                 compareSemver(latestVersion, connectedVersion) > 0)
+        )
+        const verified = Boolean(
+            verificationPending && connectedVersion === verificationPending
+        )
+        const verificationFailed = Boolean(
+            verificationPending && connectedVersion !== verificationPending
         )
         this.#state.setValue('firmware', {
             connectedVersion,
             connectedChipFamily,
             updateAvailable,
             installerReady: false,
-            status: firmwareStatus({
-                connected: true,
-                connectedVersion,
-                latestVersion,
-                updateAvailable
-            }),
-            error: ''
+            installing: false,
+            verificationPending: verified ? '' : verificationPending,
+            status: verified
+                ? 'Firmware v' + connectedVersion + ' verified'
+                : verificationFailed
+                  ? 'Firmware verification failed'
+                  : firmwareStatus({
+                        connected: true,
+                        connectedVersion,
+                        latestVersion,
+                        updateAvailable
+                    }),
+            error: verificationFailed
+                ? 'Expected firmware v' +
+                  verificationPending +
+                  ', but connected device reports v' +
+                  (connectedVersion || 'unknown')
+                : ''
         })
     }
 
@@ -770,12 +777,14 @@ export class AppController {
         try {
             const release = await this.#bridge.fetchLatestFirmwareRelease()
             if (!release) {
+                this.#latestFirmwareRelease = null
                 this.#state.setValue('firmware', {
                     checking: false,
                     status: 'Firmware release not available'
                 })
                 return
             }
+            this.#latestFirmwareRelease = release
             const snapshot = this.#state.getSnapshot()
             const latestVersion = String(release.version || '')
             const connectedVersion = snapshot.firmware.connectedVersion
@@ -827,64 +836,63 @@ export class AppController {
         })
     }
 
-    /**
-     * Releases the active transport so ESP Web Tools can claim Web Serial.
-     * @returns {Promise<boolean>}
-     */
-    async #prepareFirmwareInstall() {
+    /** Installs the latest release and resumes USB probing for verification. */
+    async #installFirmware(factory) {
+        const release = this.#latestFirmwareRelease
+        if (!release || !this.#firmwareInstaller) {
+            this.#state.setValue('firmware', {
+                status: 'Firmware installation unavailable',
+                error: 'No installable firmware release is available'
+            })
+            return
+        }
         this.#cancelBleReconnect()
         this.#cancelUsbAutoConnect()
         this.#skipNextBleReconnect = true
         this.#state.setValue('firmware', {
             installerReady: false,
+            installing: true,
+            installProgress: 0,
+            installMode: factory ? 'factory' : 'safe',
             status: 'Releasing firmware serial port',
             error: ''
         })
         try {
             await this.#bleClient.disconnect()
-        } catch (error) {
-            this.#skipNextBleReconnect = false
-            this.#state.setValue('firmware', {
-                installerReady: false,
-                status: 'Installer preparation failed',
-                error: errorMessage(error)
-            })
-            return false
-        }
-        this.#state.patch({
-            ble: {
+            this.#state.setValue('ble', {
                 connected: false,
                 connecting: false,
                 deviceName: ''
-            },
-            firmware: {
-                installerReady: true,
-                status: 'Installer ready',
-                error: ''
-            }
-        })
-        return true
-    }
-
-    /**
-     * Restores normal USB probing after ESP Web Tools releases or cancels serial.
-     * @param {object} [_event]
-     * @returns {void}
-     */
-    #resumeAfterFirmwareInstaller(_event = {}) {
-        this.#skipNextBleReconnect = false
-        this.#cancelBleReconnect()
-        this.#cancelUsbAutoConnect()
-        this.#state.patch({
-            firmware: {
-                installerReady: false,
+            })
+            await this.#firmwareInstaller.install(release, {
+                factory,
+                onProgress: (progress) => {
+                    this.#state.setValue('firmware', {
+                        installProgress: firmwareProgressPercentage(progress),
+                        status: String(
+                            progress?.message || 'Installing firmware'
+                        )
+                    })
+                }
+            })
+            this.#state.setValue('firmware', {
+                installing: false,
+                installProgress: 100,
+                verificationPending: String(release.version || ''),
                 status: 'Reconnecting Neon Meter over USB',
                 error: ''
-            },
-            sync: {
-                status: 'Reconnecting Neon Meter',
-                error: ''
-            }
+            })
+        } catch (error) {
+            this.#state.setValue('firmware', {
+                installing: false,
+                status: 'Firmware installation failed',
+                error: errorMessage(error)
+            })
+        }
+        this.#skipNextBleReconnect = false
+        this.#state.setValue('sync', {
+            status: 'Reconnecting Neon Meter',
+            error: ''
         })
         this.#scheduleUsbAutoConnect({
             allowDisconnected: true,
@@ -983,16 +991,4 @@ function nextResetMinutes(payload) {
 
     if (futureResets.length === 0) return null
     return Math.min(...futureResets)
-}
-
-/**
- * Returns user-facing firmware status text.
- * @param {{ connected?: boolean, connectedVersion?: string, latestVersion?: string, updateAvailable?: boolean }} state
- * @returns {string}
- */
-function firmwareStatus(state) {
-    if (!state.latestVersion) return 'Firmware release not checked'
-    if (!state.connected) return 'Connect a device to check firmware'
-    if (!state.connectedVersion) return 'Connected firmware version unknown'
-    return state.updateAvailable ? 'Update available' : 'Firmware up to date'
 }

@@ -145,18 +145,13 @@ test('AppView rejects BLE device chooser cancellation', async () => {
     assert.equal(document.node('#bleDeviceDialog').open, false)
 })
 
-test('AppView renders firmware status and binds installer actions', () => {
+test('AppView renders safe firmware progress and binds ordinary actions', () => {
     const document = createFakeDocument()
     const view = new AppView(document)
     const calls = []
 
-    view.bindFirmwareInstallPrepare(() => calls.push('prepare'))
-    view.bindFirmwareInstall(() => {
-        calls.push('auto-prepare')
-        return true
-    })
+    view.bindFirmwareInstall(() => calls.push('safe-install'))
     view.bindFirmwareRecheck(() => calls.push('recheck'))
-    view.bindFirmwareInstallerClosed(() => calls.push('closed'))
     view.render({
         provider: 'auto',
         locale: 'en',
@@ -180,9 +175,11 @@ test('AppView renders firmware status and binds installer actions', () => {
             latestVersion: '1.0.1',
             chipFamily: 'ESP32-S3',
             updateAvailable: true,
-            installerReady: false,
             checking: false,
-            status: 'Update available',
+            installing: true,
+            installProgress: 42,
+            installMode: 'safe',
+            status: 'Writing progress: 42%',
             error: ''
         },
         sync: {
@@ -201,74 +198,68 @@ test('AppView renders firmware status and binds installer actions', () => {
     assert.equal(document.node('#firmwareLatestVersion').textContent, 'v1.0.1')
     assert.equal(
         document.node('#firmwareStatus').textContent,
-        'Update available'
+        'Writing progress: 42%'
     )
     assert.equal(document.node('#firmwareChipFamily').textContent, 'ESP32-S3')
-    assert.equal(document.node('#firmwarePrepareButton').disabled, false)
-
-    document.node('#firmwarePrepareButton').click()
-    document.node('#firmwareInstallButton').click()
-    document.node('#firmwareRecheckButton').click()
-    document.dispatchEvent({
-        type: 'closed',
-        target: document.createElement('ewt-install-dialog')
-    })
-
-    assert.deepEqual(calls, ['prepare', 'auto-prepare', 'recheck', 'closed'])
-})
-
-test('AppView disables installer preparation while firmware status checks', () => {
-    const document = createFakeDocument()
-    const view = new AppView(document)
+    assert.equal(document.node('#firmwareInstallProgressPanel').hidden, false)
+    assert.equal(document.node('#firmwareInstallProgress').value, '42')
+    assert.equal(
+        document.node('#firmwareInstallProgressText').textContent,
+        '42%'
+    )
+    assert.equal(document.node('#firmwareInstallButton').disabled, true)
+    assert.equal(document.node('#firmwareFactoryButton').disabled, true)
 
     view.render({
-        provider: 'auto',
-        locale: 'en',
-        settings: {
-            autoSync: true,
-            autoConnectBle: true,
-            startAtLogin: false,
-            startHidden: false,
-            syncIntervalMinutes: 5,
-            rotationSeconds: 30,
-            rememberedBleDeviceName: ''
-        },
-        ble: {
-            connected: false,
-            connecting: false,
-            deviceName: '',
-            supported: true
-        },
+        ...firmwareSnapshot(),
         firmware: {
-            connectedVersion: '',
-            latestVersion: '',
-            chipFamily: '',
-            updateAvailable: false,
-            installerReady: false,
-            checking: true,
-            status: 'Checking firmware release',
-            error: ''
-        },
-        sync: {
-            running: false,
-            status: 'Ready',
-            error: '',
-            lastSync: ''
-        },
-        payload: null
+            ...firmwareSnapshot().firmware,
+            installing: false,
+            installProgress: 100
+        }
     })
+    document.node('#firmwareInstallButton').click()
+    document.node('#firmwareRecheckButton').click()
 
-    assert.equal(document.node('#firmwarePrepareButton').disabled, true)
-    assert.equal(
-        document.node('#firmwareStatus').textContent,
-        'Checking firmware release'
-    )
+    assert.deepEqual(calls, ['safe-install', 'recheck'])
 })
 
-test('AppView enables firmware installation before installer is prepared', () => {
+test('AppView confirms that factory reinstall erases pairing data', async () => {
     const document = createFakeDocument()
     const view = new AppView(document)
-    const snapshot = {
+    const calls = []
+
+    view.bindFirmwareFactoryInstall(() => calls.push('factory-install'))
+    view.render(firmwareSnapshot())
+    document.node('#firmwareFactoryButton').click()
+
+    assert.equal(document.node('#firmwareFactoryDialog').open, true)
+    assert.deepEqual(calls, [])
+    document.node('#firmwareFactoryConfirmButton').click()
+    await flushMicrotasks()
+    assert.equal(document.node('#firmwareFactoryDialog').open, false)
+    assert.deepEqual(calls, ['factory-install'])
+})
+
+test('AppView disables both installers while release metadata is checking', () => {
+    const document = createFakeDocument()
+    const view = new AppView(document)
+    const snapshot = firmwareSnapshot()
+    view.render({
+        ...snapshot,
+        firmware: {
+            ...snapshot.firmware,
+            checking: true,
+            status: 'Checking firmware release'
+        }
+    })
+
+    assert.equal(document.node('#firmwareInstallButton').disabled, true)
+    assert.equal(document.node('#firmwareFactoryButton').disabled, true)
+})
+
+function firmwareSnapshot() {
+    return {
         provider: 'auto',
         locale: 'en',
         settings: {
@@ -287,12 +278,14 @@ test('AppView enables firmware installation before installer is prepared', () =>
             supported: true
         },
         firmware: {
-            connectedVersion: '1.0.2',
-            latestVersion: '1.0.3',
+            connectedVersion: '1.0.6',
+            latestVersion: '1.0.7',
             chipFamily: 'ESP32-S3',
             updateAvailable: true,
-            installerReady: false,
             checking: false,
+            installing: false,
+            installProgress: 0,
+            installMode: '',
             status: 'Update available',
             error: ''
         },
@@ -304,77 +297,7 @@ test('AppView enables firmware installation before installer is prepared', () =>
         },
         payload: null
     }
-
-    view.render(snapshot)
-    assert.equal(document.node('#firmwareInstallButton').disabled, false)
-
-    view.render({
-        ...snapshot,
-        firmware: {
-            ...snapshot.firmware,
-            installerReady: true,
-            status: 'Installer ready'
-        }
-    })
-    assert.equal(document.node('#firmwareInstallButton').disabled, false)
-})
-
-test('AppView auto-prepares before opening firmware installer', async () => {
-    const document = createFakeDocument()
-    const view = new AppView(document)
-    const calls = []
-
-    view.bindFirmwareInstallPrepare(async () => {
-        calls.push('manual-prepare')
-        return true
-    })
-    view.bindFirmwareInstall(async () => {
-        calls.push('auto-prepare')
-        return true
-    })
-    view.render({
-        provider: 'auto',
-        locale: 'en',
-        settings: {
-            autoSync: true,
-            autoConnectBle: true,
-            startAtLogin: false,
-            startHidden: false,
-            syncIntervalMinutes: 5,
-            rotationSeconds: 30,
-            rememberedBleDeviceName: ''
-        },
-        ble: {
-            connected: true,
-            connecting: false,
-            deviceName: 'Neon Meter USB',
-            supported: true
-        },
-        firmware: {
-            connectedVersion: '1.0.2',
-            latestVersion: '1.0.3',
-            chipFamily: 'ESP32-S3',
-            updateAvailable: true,
-            installerReady: false,
-            checking: false,
-            status: 'Update available',
-            error: ''
-        },
-        sync: {
-            running: false,
-            status: 'Ready',
-            error: '',
-            lastSync: ''
-        },
-        payload: null
-    })
-
-    document.node('#firmwareInstallButton').click()
-    await flushMicrotasks()
-
-    assert.deepEqual(calls, ['auto-prepare'])
-    assert.equal(document.node('#firmwareInstallButton').defaultClicks, 1)
-})
+}
 
 /**
  * Creates a minimal document with all nodes AppView writes during render.
@@ -410,9 +333,15 @@ function createFakeDocument() {
         '#firmwareStatus',
         '#firmwareChipFamily',
         '#firmwareError',
-        '#firmwarePrepareButton',
         '#firmwareRecheckButton',
         '#firmwareInstallButton',
+        '#firmwareFactoryButton',
+        '#firmwareInstallProgressPanel',
+        '#firmwareInstallProgress',
+        '#firmwareInstallProgressText',
+        '#firmwareFactoryDialog',
+        '#firmwareFactoryConfirmButton',
+        '#firmwareFactoryCancelButton',
         '#bleDeviceDialog',
         '#bleDeviceList',
         '#bleDeviceCancelButton'

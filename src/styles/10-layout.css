@@ -282,13 +282,22 @@ h2 {
     flex-wrap: wrap;
 }
 
-.firmware-actions esp-web-install-button {
-    display: inline-flex;
+#firmwareInstallProgressPanel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
 }
 
-.tool-message {
-    color: var(--warn);
-    font-size: 0.86rem;
+#firmwareInstallProgress {
+    width: 100%;
+    accent-color: var(--accent-cyan);
+}
+
+.firmware-factory-card {
+    width: min(520px, calc(100vw - 32px));
+    display: grid;
+    gap: 18px;
 }
 
 .section-heading {

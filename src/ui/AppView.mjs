@@ -4,9 +4,6 @@
 export class AppView {
     #document
     #bleDeviceReject = null
-    #firmwareInstallerReady = false
-    #firmwareInstallPreparing = false
-    #firmwareInstallBypass = false
 
     /**
      * @param {Document} documentRef
@@ -170,53 +167,31 @@ export class AppView {
         this.#button('#syncButton')?.addEventListener('click', callback)
     }
 
-    /**
-     * Binds firmware installer preparation.
-     * @param {() => void} callback
-     * @returns {void}
-     */
-    bindFirmwareInstallPrepare(callback) {
-        this.#button('#firmwarePrepareButton')?.addEventListener(
+    /** Binds the non-erasing firmware install action. */
+    bindFirmwareInstall(callback) {
+        this.#button('#firmwareInstallButton')?.addEventListener(
             'click',
             callback
         )
     }
 
-    /**
-     * Binds firmware installation with automatic port release before opening.
-     * @param {() => boolean | Promise<boolean>} callback
-     * @returns {void}
-     */
-    bindFirmwareInstall(callback) {
-        const button = this.#button('#firmwareInstallButton')
-        if (!button) return
-        button.addEventListener('click', async (event) => {
-            if (this.#firmwareInstallBypass || this.#firmwareInstallerReady) {
-                this.#firmwareInstallBypass = false
-                return
+    /** Binds factory confirmation and the explicitly erasing install action. */
+    bindFirmwareFactoryInstall(callback) {
+        const dialog = this.#dialog('#firmwareFactoryDialog')
+        this.#button('#firmwareFactoryButton')?.addEventListener('click', () =>
+            dialog?.showModal()
+        )
+        this.#button('#firmwareFactoryCancelButton')?.addEventListener(
+            'click',
+            () => dialog?.close()
+        )
+        this.#button('#firmwareFactoryConfirmButton')?.addEventListener(
+            'click',
+            async () => {
+                dialog?.close()
+                await callback()
             }
-            event.preventDefault?.()
-            event.stopPropagation?.()
-            event.stopImmediatePropagation?.()
-            if (this.#firmwareInstallPreparing) return
-
-            this.#firmwareInstallPreparing = true
-            button.disabled = true
-            button.textContent = 'Preparing installer'
-            const prepared = await callback()
-            this.#firmwareInstallPreparing = false
-            if (prepared === false) {
-                button.disabled = false
-                button.textContent = 'Install or update'
-                return
-            }
-
-            this.#firmwareInstallerReady = true
-            button.disabled = false
-            button.textContent = 'Install or update'
-            this.#firmwareInstallBypass = true
-            button.click()
-        })
+        )
     }
 
     /**
@@ -229,21 +204,6 @@ export class AppView {
             'click',
             callback
         )
-    }
-
-    /**
-     * Binds ESP Web Tools dialog closure so normal device sync can resume.
-     * @param {(event: { reason: string, state: string }) => void} callback
-     * @returns {void}
-     */
-    bindFirmwareInstallerClosed(callback) {
-        this.#document.addEventListener?.('closed', (event) => {
-            if (!isEspWebToolsDialog(event.target)) return
-            callback({
-                reason: 'closed',
-                state: String(event.target.getAttribute?.('state') || '')
-            })
-        })
     }
 
     /**
@@ -404,7 +364,11 @@ export class AppView {
      */
     #renderFirmware(snapshot) {
         const firmware = snapshot.firmware || {}
-        this.#firmwareInstallerReady = Boolean(firmware.installerReady)
+        const installing = Boolean(firmware.installing)
+        const progress = Math.max(
+            0,
+            Math.min(100, Math.floor(Number(firmware.installProgress) || 0))
+        )
         this.#setText(
             '#firmwareConnectedVersion',
             firmware.connectedVersion
@@ -426,25 +390,33 @@ export class AppView {
             firmware.status || firmwareStatusText(snapshot)
         )
         this.#setText('#firmwareError', firmware.error || '')
-        this.#setDisabled(
-            '#firmwarePrepareButton',
-            Boolean(firmware.checking || firmware.installerReady)
-        )
+        this.#setHidden('#firmwareInstallProgressPanel', !installing)
+        this.#setValue('#firmwareInstallProgress', progress)
+        this.#setText('#firmwareInstallProgressText', String(progress) + '%')
         this.#setDisabled(
             '#firmwareInstallButton',
-            Boolean(firmware.checking || this.#firmwareInstallPreparing)
+            Boolean(firmware.checking || installing || !firmware.latestVersion)
+        )
+        this.#setDisabled(
+            '#firmwareFactoryButton',
+            Boolean(firmware.checking || installing || !firmware.latestVersion)
         )
         this.#setText(
             '#firmwareInstallButton',
-            this.#firmwareInstallPreparing
-                ? 'Preparing installer'
+            installing && firmware.installMode === 'safe'
+                ? 'Installing'
                 : 'Install or update'
         )
         this.#setText(
-            '#firmwarePrepareButton',
-            firmware.installerReady ? 'Installer ready' : 'Prepare installer'
+            '#firmwareFactoryButton',
+            installing && firmware.installMode === 'factory'
+                ? 'Reinstalling'
+                : 'Factory reinstall'
         )
-        this.#setDisabled('#firmwareRecheckButton', Boolean(firmware.checking))
+        this.#setDisabled(
+            '#firmwareRecheckButton',
+            Boolean(firmware.checking || installing)
+        )
     }
 
     #button(selector) {
@@ -572,21 +544,4 @@ function firmwareStatusText(snapshot) {
     if (!firmware.connectedVersion) return 'Connected firmware version unknown'
     if (firmware.updateAvailable) return 'Update available'
     return 'Firmware up to date'
-}
-
-/**
- * Checks whether an event came from the ESP Web Tools install dialog.
- * @param {unknown} target
- * @returns {boolean}
- */
-function isEspWebToolsDialog(target) {
-    if (!target || typeof target !== 'object') return false
-    const element = /** @type {{ localName?: string, tagName?: string }} */ (
-        target
-    )
-    return (
-        String(element.localName || '').toLowerCase() ===
-            'ewt-install-dialog' ||
-        String(element.tagName || '').toLowerCase() === 'ewt-install-dialog'
-    )
 }

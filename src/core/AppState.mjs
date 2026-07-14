@@ -14,6 +14,10 @@ export const DEFAULT_FIRMWARE_STATE = Object.freeze({
     connectedChipFamily: '',
     updateAvailable: false,
     installerReady: false,
+    installing: false,
+    installProgress: 0,
+    installMode: '',
+    verificationPending: '',
     checking: false,
     status: 'Firmware release not checked',
     error: ''

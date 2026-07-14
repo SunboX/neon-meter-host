@@ -792,69 +792,7 @@ test('AppController compares connected firmware against latest release', async (
     assert.equal(snapshot.firmware.status, 'Update available')
 })
 
-test('AppController prepares installer by disconnecting the active transport', async () => {
-    const state = new AppState({
-        ble: {
-            connected: true,
-            supported: true,
-            deviceName: 'Neon Meter USB'
-        }
-    })
-    const view = new FakeView()
-    const bridge = new FakeBridge({})
-    const bleClient = new FakeBleClient()
-    const controller = new AppController({
-        state,
-        view,
-        bridge,
-        bleClient
-    })
-
-    await controller.init()
-    await view.prepareFirmwareInstall()
-
-    assert.equal(bleClient.disconnectedByUser, true)
-    assert.equal(state.getSnapshot().firmware.installerReady, true)
-    assert.equal(state.getSnapshot().firmware.status, 'Installer ready')
-})
-
-test('AppController waits for active transport release before enabling installer', async () => {
-    const disconnectGate = createDeferred()
-    const state = new AppState({
-        ble: {
-            connected: true,
-            supported: true,
-            deviceName: 'Neon Meter USB'
-        }
-    })
-    const view = new FakeView()
-    const bridge = new FakeBridge({})
-    const bleClient = new FakeBleClient({
-        disconnectPromise: disconnectGate.promise
-    })
-    const controller = new AppController({
-        state,
-        view,
-        bridge,
-        bleClient
-    })
-
-    await controller.init()
-    const preparePromise = view.prepareFirmwareInstall()
-    await flushMicrotasks()
-
-    assert.equal(bleClient.disconnectedByUser, true)
-    assert.equal(state.getSnapshot().firmware.installerReady, false)
-    assert.notEqual(state.getSnapshot().firmware.status, 'Installer ready')
-
-    disconnectGate.resolve()
-    await preparePromise
-
-    assert.equal(state.getSnapshot().firmware.installerReady, true)
-    assert.equal(state.getSnapshot().firmware.status, 'Installer ready')
-})
-
-test('AppController resumes USB probing after installer dialog closes', async () => {
+test('AppController safely installs firmware and verifies after USB reconnect', async () => {
     const timers = new FakeTimers()
     const state = new AppState({
         ble: {
@@ -864,7 +802,22 @@ test('AppController resumes USB probing after installer dialog closes', async ()
         }
     })
     const view = new FakeView()
-    const bridge = new FakeBridge({})
+    const release = firmwareReleaseFixture()
+    const bridge = new FakeBridge({ latestFirmwareRelease: release })
+    const firmwareInstaller = new FakeFirmwareInstaller({
+        progress: [
+            {
+                state: 'writing',
+                message: 'Writing progress: 42%',
+                details: { percentage: 42 }
+            },
+            {
+                state: 'finished',
+                message: 'Installation complete',
+                details: { percentage: 100 }
+            }
+        ]
+    })
     const bleClient = new FakeBleClient({
         canConnectWithoutRemembered: true,
         rememberedDevices: [
@@ -872,14 +825,14 @@ test('AppController resumes USB probing after installer dialog closes', async ()
                 name: 'Neon Meter USB',
                 connected: true,
                 transport: 'usb',
-                firmwareVersion: '1.0.1',
+                firmwareVersion: '1.0.7',
                 chipFamily: 'ESP32-S3'
             },
             {
                 name: 'Neon Meter USB',
                 connected: true,
                 transport: 'usb',
-                firmwareVersion: '1.0.1',
+                firmwareVersion: '1.0.7',
                 chipFamily: 'ESP32-S3'
             }
         ]
@@ -889,76 +842,148 @@ test('AppController resumes USB probing after installer dialog closes', async ()
         view,
         bridge,
         bleClient,
+        firmwareInstaller,
         timers,
         usbAutoConnectDelayMs: 25
     })
 
     await controller.init()
-    await view.prepareFirmwareInstall()
-    await view.closeFirmwareInstaller()
+    await view.installFirmware()
 
-    assert.equal(state.getSnapshot().firmware.installerReady, false)
+    assert.equal(bleClient.disconnectedByUser, true)
+    assert.equal(firmwareInstaller.calls.length, 1)
+    assert.equal(firmwareInstaller.calls[0].release, release)
+    assert.equal(firmwareInstaller.calls[0].factory, false)
+    assert.equal(state.getSnapshot().firmware.installing, false)
+    assert.equal(state.getSnapshot().firmware.installProgress, 100)
+    assert.equal(state.getSnapshot().firmware.verificationPending, '1.0.7')
     assert.equal(
         state.getSnapshot().firmware.status,
         'Reconnecting Neon Meter over USB'
     )
+    assert.doesNotMatch(state.getSnapshot().firmware.status, /verified/i)
     assert.deepEqual(timers.pendingDelays, [25])
 
     await timers.runNext()
+    await flushMicrotasks()
 
-    assert.deepEqual(bleClient.rememberedConnectRequests.at(-1), {
-        id: '',
-        name: ''
-    })
-    assert.equal(state.getSnapshot().ble.connected, true)
-    assert.equal(state.getSnapshot().ble.deviceName, 'Neon Meter USB')
-    assert.equal(state.getSnapshot().firmware.connectedVersion, '1.0.1')
+    assert.equal(state.getSnapshot().firmware.verificationPending, '')
+    assert.equal(
+        state.getSnapshot().firmware.status,
+        'Firmware v1.0.7 verified'
+    )
 })
 
-test('AppController resumes USB probing after firmware serial selection is canceled', async () => {
-    const timers = new FakeTimers()
+test('AppController factory reinstall always requests an erasing flash', async () => {
     const state = new AppState({
         ble: {
-            connected: false,
+            connected: true,
             supported: true,
-            deviceName: ''
-        },
+            deviceName: 'Neon Meter USB'
+        }
+    })
+    const view = new FakeView()
+    const bridge = new FakeBridge({
+        latestFirmwareRelease: firmwareReleaseFixture()
+    })
+    const bleClient = new FakeBleClient()
+    const firmwareInstaller = new FakeFirmwareInstaller()
+    const controller = new AppController({
+        state,
+        view,
+        bridge,
+        bleClient,
+        firmwareInstaller
+    })
+
+    await controller.init()
+    await view.factoryInstallFirmware()
+
+    assert.equal(firmwareInstaller.calls.length, 1)
+    assert.equal(firmwareInstaller.calls[0].factory, true)
+    assert.equal(state.getSnapshot().firmware.installMode, 'factory')
+})
+
+test('AppController reports both versions when firmware verification fails', async () => {
+    const state = new AppState({
         firmware: {
-            installerReady: true,
-            status: 'Installer ready'
+            latestVersion: '1.0.7',
+            verificationPending: '1.0.7'
         }
     })
     const view = new FakeView()
     const bridge = new FakeBridge({})
     const bleClient = new FakeBleClient({
+        manualDevice: {
+            id: 'usb-1',
+            name: 'Neon Meter USB',
+            connected: true,
+            transport: 'usb',
+            firmwareVersion: '1.0.6',
+            chipFamily: 'ESP32-S3'
+        }
+    })
+    const controller = new AppController({ state, view, bridge, bleClient })
+
+    await controller.init()
+    await view.connect()
+
+    assert.equal(
+        state.getSnapshot().firmware.status,
+        'Firmware verification failed'
+    )
+    assert.match(state.getSnapshot().firmware.error, /v1\.0\.7/)
+    assert.match(state.getSnapshot().firmware.error, /v1\.0\.6/)
+    assert.equal(state.getSnapshot().firmware.verificationPending, '1.0.7')
+})
+
+test('AppController restores USB probing after firmware installation failure', async () => {
+    const timers = new FakeTimers()
+    const state = new AppState({
+        ble: {
+            connected: true,
+            supported: true,
+            deviceName: 'Neon Meter USB'
+        }
+    })
+    const view = new FakeView()
+    const bridge = new FakeBridge({
+        latestFirmwareRelease: firmwareReleaseFixture()
+    })
+    const bleClient = new FakeBleClient({
         canConnectWithoutRemembered: true
+    })
+    const firmwareInstaller = new FakeFirmwareInstaller({
+        error: new Error('Serial selection cancelled')
     })
     const controller = new AppController({
         state,
         view,
         bridge,
         bleClient,
+        firmwareInstaller,
         timers,
         usbAutoConnectDelayMs: 25
     })
 
     await controller.init()
-    bridge.emitFirmwareInstallerEvent({ type: 'serial-canceled' })
+    await view.installFirmware()
 
-    assert.equal(state.getSnapshot().firmware.installerReady, false)
+    assert.equal(state.getSnapshot().firmware.installing, false)
     assert.equal(
         state.getSnapshot().firmware.status,
-        'Reconnecting Neon Meter over USB'
+        'Firmware installation failed'
     )
+    assert.match(state.getSnapshot().firmware.error, /selection cancelled/i)
     assert.deepEqual(timers.pendingDelays, [25])
 })
 
 class FakeView {
     #connectCallback = async () => {}
     #disconnectCallback = async () => {}
-    #firmwarePrepareCallback = async () => {}
+    #firmwareInstallCallback = async () => {}
+    #firmwareFactoryCallback = async () => {}
     #firmwareRecheckCallback = async () => {}
-    #firmwareClosedCallback = async () => {}
     bleDeviceChoiceRequests = []
 
     constructor(options = {}) {
@@ -985,16 +1010,16 @@ class FakeView {
 
     bindSettingsSave(_callback) {}
 
-    bindFirmwareInstallPrepare(callback) {
-        this.#firmwarePrepareCallback = callback
+    bindFirmwareInstall(callback) {
+        this.#firmwareInstallCallback = callback
+    }
+
+    bindFirmwareFactoryInstall(callback) {
+        this.#firmwareFactoryCallback = callback
     }
 
     bindFirmwareRecheck(callback) {
         this.#firmwareRecheckCallback = callback
-    }
-
-    bindFirmwareInstallerClosed(callback) {
-        this.#firmwareClosedCallback = callback
     }
 
     closeSettingsDialog() {}
@@ -1009,16 +1034,16 @@ class FakeView {
         await this.#disconnectCallback()
     }
 
-    async prepareFirmwareInstall() {
-        await this.#firmwarePrepareCallback()
+    async installFirmware() {
+        await this.#firmwareInstallCallback()
+    }
+
+    async factoryInstallFirmware() {
+        await this.#firmwareFactoryCallback()
     }
 
     async recheckFirmware() {
         await this.#firmwareRecheckCallback()
-    }
-
-    async closeFirmwareInstaller() {
-        await this.#firmwareClosedCallback({ reason: 'closed' })
     }
 
     async chooseBleDevice(devices) {
@@ -1080,6 +1105,28 @@ class FakeBridge {
 
     emitFirmwareInstallerEvent(event) {
         this.#firmwareInstallerEventCallback?.(event)
+    }
+}
+
+class FakeFirmwareInstaller {
+    calls = []
+
+    constructor(options = {}) {
+        this.options = options
+    }
+
+    async install(release, options) {
+        this.calls.push({
+            release,
+            factory: Boolean(options.factory)
+        })
+        for (const state of this.options.progress || [
+            { state: 'finished', details: { percentage: 100 } }
+        ]) {
+            options.onProgress?.(state)
+        }
+        if (this.options.error) throw this.options.error
+        return { state: 'finished' }
     }
 }
 
@@ -1214,4 +1261,21 @@ function bleTimeoutError(deviceId) {
     error.deviceId = deviceId
     error.deviceName = 'Neon Meter'
     return error
+}
+
+function firmwareReleaseFixture() {
+    return {
+        name: 'Neon Meter',
+        version: '1.0.7',
+        manifestUrl: 'https://example.test/manifest.json',
+        chipFamily: 'ESP32-S3',
+        parts: [
+            { path: 'https://example.test/bootloader.bin', offset: 0 },
+            { path: 'https://example.test/partitions.bin', offset: 32768 },
+            { path: 'https://example.test/boot_app0.bin', offset: 57344 },
+            { path: 'https://example.test/firmware.bin', offset: 65536 }
+        ],
+        imageUrl: 'https://example.test/firmware.bin',
+        factoryImageUrl: 'https://example.test/factory.bin'
+    }
 }

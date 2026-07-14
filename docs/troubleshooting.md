@@ -73,16 +73,18 @@ to `Neon Meter USB`.
 
 ## Firmware Installer Cannot Open The Device
 
-- Press `Prepare installer` in the Firmware panel before starting the embedded
-  installer. This releases the host app's active USB/BLE transport so Web
-  Serial can claim the CoreS3.
+- Connect the CoreS3 over USB and press `Install or update`. The app releases
+  its active USB/BLE transport before Web Serial requests the CoreS3 port.
 - If the installer still reports that the serial port is busy, close any other
   serial monitor or app that may have opened the ESP32-S3 CDC port.
 - If the device is brand new or in bootloader mode, select the Espressif
-  `ESP32-S3` serial port from the installer chooser and install the published
-  Neon Meter manifest.
-- After flashing, press `Recheck firmware` or reconnect the device. Newer
-  firmware reports `firmwareVersion` and `chipFamily` over USB and BLE.
+  `ESP32-S3` serial port from the installer chooser. Use `Factory reinstall`
+  only when the safe updater cannot recover the device; factory mode erases
+  BLE pairing data and all other local state.
+- Normal `Install or update` flashes the split release images without erasing
+  NVS. After flashing, the app reconnects over USB and verifies that the device
+  reports the requested `firmwareVersion`. A mismatch remains visible as
+  `Firmware verification failed` with both versions.
 
     If the serial port opens but no hello arrives, verify the host sets DTR high
     and RTS low. The ESP32-S3 CDC interface can expose `/dev/tty.usbmodem...`
@@ -174,6 +176,18 @@ to `Neon Meter USB`.
 - On Linux, reconnect can fail if the desktop user lacks Bluetooth adapter
   permissions. Start Neon Meter from a terminal and check for BlueZ or HCI
   permission errors.
+
+## BLE Is Found But Never Finishes Connecting
+
+Two consecutive connection timeouts for the same Neon Meter trigger automatic
+pairing repair when a compatible meter is connected over USB. The firmware
+clears its peer bonds, rotates its BLE identity, restarts, and the host resumes
+discovery without an endless reconnect spinner.
+
+If USB is unavailable or the firmware is too old, connect the meter over USB
+and retry. On macOS, the fallback panel can open Bluetooth Settings so you can
+forget the old Neon Meter entry manually. The app does not claim to remove the
+macOS bond itself.
 
 ### macOS BLE Restart Debug Checklist
 

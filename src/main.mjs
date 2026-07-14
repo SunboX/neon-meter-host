@@ -6,6 +6,7 @@ import { IpcBleClient } from './ble/IpcBleClient.mjs'
 import { WebBluetoothAiMeterClient } from './ble/WebBluetoothAiMeterClient.mjs'
 import { I18nService } from './I18n.mjs'
 import { fetchLatestFirmwareRelease } from './firmware/FirmwareReleaseClient.mjs'
+import { SafeFirmwareInstaller } from './firmware/SafeFirmwareInstaller.mjs'
 
 const SETTINGS_STORAGE_KEY = 'neon-meter-host-settings'
 const LEGACY_SETTINGS_STORAGE_KEY = 'ai-meter-host-settings'
@@ -18,12 +19,21 @@ async function bootstrap() {
     const state = new AppState({ locale: i18n ? i18n.getLocale() : 'en' })
     const view = new AppView(document)
     const bridge = createBridge()
+    const firmwareInstaller = new SafeFirmwareInstaller({
+        serial: navigator.serial,
+        loadFlash: async () => {
+            const module =
+                await import('./generated/esp-web-tools-flash.bundle.mjs')
+            return module.flash
+        }
+    })
     const controller = new AppController({
         state,
         view,
         i18n,
         bridge,
-        bleClient: createBleClient(bridge)
+        bleClient: createBleClient(bridge),
+        firmwareInstaller
     })
 
     await controller.init()

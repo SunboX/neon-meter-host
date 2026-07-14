@@ -10,10 +10,6 @@
             type="image/svg+xml"
         />
         <link rel="stylesheet" href="style.css" />
-        <script
-            type="module"
-            src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"
-        ></script>
     </head>
     <body class="neon-meter-app">
         <main class="app-shell">
@@ -109,32 +105,32 @@
                         </dd>
                     </div>
                 </dl>
+                <div id="firmwareInstallProgressPanel" hidden>
+                    <progress
+                        id="firmwareInstallProgress"
+                        max="100"
+                        value="0"
+                    ></progress>
+                    <span id="firmwareInstallProgressText">0%</span>
+                </div>
                 <div class="firmware-actions">
-                    <button id="firmwarePrepareButton" class="btn-secondary">
-                        Prepare installer
-                    </button>
                     <button id="firmwareRecheckButton" class="btn-secondary">
                         Recheck firmware
                     </button>
-                    <esp-web-install-button
-                        manifest="https://sunbox.github.io/neon-meter/manifest.json"
+                    <button
+                        id="firmwareInstallButton"
+                        class="btn-primary"
+                        disabled
                     >
-                        <button
-                            id="firmwareInstallButton"
-                            slot="activate"
-                            class="btn-primary"
-                            disabled
-                        >
-                            Install or update
-                        </button>
-                        <span slot="unsupported" class="tool-message">
-                            Web Serial is not available in this Electron build.
-                        </span>
-                        <span slot="not-allowed" class="tool-message">
-                            Web Serial permission is required for firmware
-                            installation.
-                        </span>
-                    </esp-web-install-button>
+                        Install or update
+                    </button>
+                    <button
+                        id="firmwareFactoryButton"
+                        class="btn-secondary"
+                        disabled
+                    >
+                        Factory reinstall
+                    </button>
                 </div>
                 <p id="firmwareError" class="error-line" aria-live="polite"></p>
             </section>
@@ -320,6 +316,37 @@
                     </button>
                 </footer>
             </form>
+        </dialog>
+
+        <dialog id="firmwareFactoryDialog" class="settings-dialog">
+            <section class="settings-card firmware-factory-card">
+                <header class="settings-card-header">
+                    <div>
+                        <p class="eyebrow">Advanced recovery</p>
+                        <h2>Factory reinstall</h2>
+                    </div>
+                </header>
+                <p>
+                    Factory reinstall erases all local state, including BLE
+                    pairing data. Use Install or update to preserve pairing.
+                </p>
+                <footer class="settings-actions">
+                    <button
+                        id="firmwareFactoryCancelButton"
+                        class="btn-secondary"
+                        type="button"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        id="firmwareFactoryConfirmButton"
+                        class="btn-primary"
+                        type="button"
+                    >
+                        Erase and reinstall
+                    </button>
+                </footer>
+            </section>
         </dialog>
 
         <dialog id="bleDeviceDialog" class="ble-device-dialog">

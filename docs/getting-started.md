@@ -34,6 +34,17 @@ Electron builds prefer USB when the CoreS3 is connected by cable. If USB is not
 present, the app uses native BLE and can reconnect to the latest BLE device on
 restart without showing the Bluetooth chooser.
 
+## Update Firmware
+
+Connect the CoreS3 over USB, then use `Install or update` in the Firmware panel.
+The app releases its serial connection automatically, flashes the published
+split images without erasing NVS, reconnects over USB, and verifies the reported
+firmware version. This safe path preserves BLE identity and pairing data.
+
+`Factory reinstall` is an advanced recovery action. It requires confirmation
+because it erases local state and pairing data before writing the merged factory
+image.
+
 ## Static Preview
 
 For a browser-only UI preview:

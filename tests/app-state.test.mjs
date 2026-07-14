@@ -17,6 +17,10 @@ test('AppState initializes with defaults', () => {
     assert.equal(snapshot.firmware.latestVersion, '')
     assert.equal(snapshot.firmware.connectedVersion, '')
     assert.equal(snapshot.firmware.updateAvailable, false)
+    assert.equal(snapshot.firmware.installing, false)
+    assert.equal(snapshot.firmware.installProgress, 0)
+    assert.equal(snapshot.firmware.installMode, '')
+    assert.equal(snapshot.firmware.verificationPending, '')
 })
 
 /**
