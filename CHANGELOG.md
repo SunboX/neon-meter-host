@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.0.8 - 2026-07-14
+
+### Fixed
+
+- Detect ChatGPT Session and Weekly limits from semantic fields and exact
+  window durations instead of assuming that the primary window is Session.
+- Prevent a temporarily disabled Session limit from being populated with the
+  Weekly value.
+- Hide unavailable Session data from the menu bar gauge, tooltip, context
+  menu, and device payload while keeping Weekly usage visible.
+
+### Changed
+
+- Added the backward-compatible `se` capability field so firmware can hide the
+  Session panel only while that limit is unavailable and restore it when it
+  returns.
+- Documented optional ChatGPT Session windows and weekly-only payloads.
+
+### Validation
+
+- `npm test`
+- `npm run check:format`
+- Live local ChatGPT weekly-only payload verification
+
 ## 1.0.7 - 2026-06-11
 
 ### Added
