@@ -132,7 +132,8 @@ test('package metadata exposes Neon Meter product name', async () => {
     const pkg = JSON.parse(raw)
 
     assert.equal(pkg.productName, 'Neon Meter')
-    assert.equal(pkg.scripts.start, 'node scripts/start-neon-meter.mjs')
+    assert.match(pkg.scripts.start, /build:firmware-installer/)
+    assert.match(pkg.scripts.start, /scripts\/start-neon-meter\.mjs/)
     assert.equal(pkg.scripts.dev, 'node scripts/start-neon-meter.mjs')
     assert.equal(
         pkg.scripts['assets:icons'],
