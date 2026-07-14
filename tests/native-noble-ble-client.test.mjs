@@ -89,6 +89,32 @@ test('NativeNobleAiMeterClient reconnects when the remembered BLE id changed', a
     })
 })
 
+test('NativeNobleAiMeterClient cancels a BLE connection that never completes', async () => {
+    const peripheral = new FakePeripheral({
+        id: 'stale-meter',
+        name: 'Neon Meter',
+        connectPromise: new Promise((resolve) => setTimeout(resolve, 30))
+    })
+    const noble = new FakeNoble({ peripherals: [peripheral] })
+    const client = new NativeNobleAiMeterClient({
+        noble,
+        scanTimeoutMs: 20,
+        connectTimeoutMs: 5,
+        discoveryRetryDelayMs: 0
+    })
+
+    await assert.rejects(
+        () => client.connectRemembered({ id: 'stale-meter' }),
+        (error) => {
+            assert.equal(error.code, 'BLE_CONNECTION_TIMEOUT')
+            assert.equal(error.deviceId, 'stale-meter')
+            assert.equal(error.deviceName, 'Neon Meter')
+            return true
+        }
+    )
+    assert.equal(peripheral.disconnectCalls, 1)
+})
+
 test('NativeNobleAiMeterClient does not auto-connect an ambiguous remembered device', async () => {
     const noble = new FakeNoble({
         peripherals: [
@@ -411,11 +437,16 @@ class FakePeripheral extends EventEmitter {
         this.filteredCharacteristics =
             options.filteredCharacteristics || this.characteristics
         this.discoveryResults = options.discoveryResults || null
+        this.connectPromise = options.connectPromise || Promise.resolve()
+        this.disconnectCalls = 0
     }
 
-    async connectAsync() {}
+    connectAsync() {
+        return this.connectPromise
+    }
 
     async disconnectAsync() {
+        this.disconnectCalls += 1
         this.emit('disconnect', 'local')
     }
 

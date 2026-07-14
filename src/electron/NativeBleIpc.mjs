@@ -12,12 +12,14 @@ export function registerNativeBleIpc(dependencies) {
     ipcMain.on('ble:can-connect-without-remembered', (event) => {
         event.returnValue = Boolean(bleClient.canConnectWithoutRemembered?.())
     })
-    ipcMain.handle('ble:connect', () => bleClient.connect())
+    ipcMain.handle('ble:connect', () =>
+        deviceOperation(() => bleClient.connect())
+    )
     ipcMain.handle('ble:connect-selected', (_event, device) =>
-        bleClient.connectSelected(device)
+        deviceOperation(() => bleClient.connectSelected(device))
     )
     ipcMain.handle('ble:connect-remembered', (_event, device) =>
-        bleClient.connectRemembered(device)
+        deviceOperation(() => bleClient.connectRemembered(device))
     )
     ipcMain.handle('ble:disconnect', () => bleClient.disconnect())
     ipcMain.handle('ble:write-payload', (_event, payload) =>
@@ -31,6 +33,27 @@ export function registerNativeBleIpc(dependencies) {
                 detail: event.detail ?? null
             })
         })
+    }
+}
+
+/**
+ * Converts native connection failures into serializable IPC results.
+ * @param {() => Promise<unknown>} callback
+ * @returns {Promise<unknown>}
+ */
+async function deviceOperation(callback) {
+    try {
+        return await callback()
+    } catch (error) {
+        return {
+            operationError: {
+                code: String(error?.code || 'DEVICE_OPERATION_FAILED'),
+                message:
+                    error instanceof Error ? error.message : String(error),
+                deviceId: String(error?.deviceId || ''),
+                deviceName: String(error?.deviceName || '')
+            }
+        }
     }
 }
 

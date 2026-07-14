@@ -40,7 +40,7 @@ export class IpcBleClient extends EventTarget {
      * @returns {Promise<{ id?: string, name: string, connected: boolean }>}
      */
     async connect(options = {}) {
-        const device = await this.#bridge.bleConnect()
+        const device = unwrapDeviceOperation(await this.#bridge.bleConnect())
         if (!device?.selectionRequired) return device
         if (typeof options.selectDevice !== 'function') {
             throw new Error('BLE device selection is required')
@@ -51,7 +51,9 @@ export class IpcBleClient extends EventTarget {
         if (!selectedDevice) {
             throw new Error('BLE device selection cancelled')
         }
-        return this.#bridge.bleConnectSelected(selectedDevice)
+        return unwrapDeviceOperation(
+            await this.#bridge.bleConnectSelected(selectedDevice)
+        )
     }
 
     /**
@@ -59,8 +61,10 @@ export class IpcBleClient extends EventTarget {
      * @param {{ id?: string, name?: string }} device
      * @returns {Promise<{ id?: string, name: string, connected: boolean } | null>}
      */
-    connectRemembered(device) {
-        return this.#bridge.bleConnectRemembered(device)
+    async connectRemembered(device) {
+        return unwrapDeviceOperation(
+            await this.#bridge.bleConnectRemembered(device)
+        )
     }
 
     /**
@@ -103,6 +107,24 @@ export class IpcBleClient extends EventTarget {
             })
         )
     }
+}
+
+/**
+ * Restores a typed native device error from its serializable IPC envelope.
+ * @param {unknown} result
+ * @returns {any}
+ */
+function unwrapDeviceOperation(result) {
+    const operationError = result?.operationError
+    if (!operationError) return result
+
+    const error = new Error(
+        String(operationError.message || 'Device operation failed')
+    )
+    error.code = String(operationError.code || 'DEVICE_OPERATION_FAILED')
+    error.deviceId = String(operationError.deviceId || '')
+    error.deviceName = String(operationError.deviceName || '')
+    throw error
 }
 
 /**

@@ -8,6 +8,20 @@ const REFRESH_CHAR_UUID = normalizeUuid('41494d45-7465-7220-0000-000000000004')
 const METADATA_CHAR_UUID = normalizeUuid('41494d45-7465-7220-0000-000000000005')
 const DEVICE_NAME_PREFIXES = ['Neon Meter', 'AI Meter']
 
+/** Error raised when the operating system leaves a BLE connection pending. */
+export class BleConnectionTimeoutError extends Error {
+    /**
+     * @param {object} peripheral
+     */
+    constructor(peripheral) {
+        super('Neon Meter BLE connection timed out')
+        this.name = 'BleConnectionTimeoutError'
+        this.code = 'BLE_CONNECTION_TIMEOUT'
+        this.deviceId = String(peripheral?.id || peripheral?.address || '')
+        this.deviceName = peripheralName(peripheral)
+    }
+}
+
 /**
  * Main-process BLE client backed by native Noble bindings.
  */
@@ -16,6 +30,7 @@ export class NativeNobleAiMeterClient extends EventTarget {
     #loadError = null
     #timers
     #scanTimeoutMs
+    #connectTimeoutMs
     #discoveryAttempts
     #discoveryRetryDelayMs
     #peripheral = null
@@ -27,7 +42,7 @@ export class NativeNobleAiMeterClient extends EventTarget {
     #refreshDataHandler = null
 
     /**
-     * @param {{ noble?: object, timers?: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout'>, scanTimeoutMs?: number, discoveryAttempts?: number, discoveryRetryDelayMs?: number }} [options]
+     * @param {{ noble?: object, timers?: Pick<typeof globalThis, 'setTimeout' | 'clearTimeout'>, scanTimeoutMs?: number, connectTimeoutMs?: number, discoveryAttempts?: number, discoveryRetryDelayMs?: number }} [options]
      */
     constructor(options = {}) {
         super()
@@ -46,6 +61,11 @@ export class NativeNobleAiMeterClient extends EventTarget {
                 : globalThis.clearTimeout.bind(globalThis)
         }
         this.#scanTimeoutMs = Number(options.scanTimeoutMs) || 10000
+        const connectTimeoutMs = Number(options.connectTimeoutMs ?? 15000)
+        this.#connectTimeoutMs =
+            Number.isFinite(connectTimeoutMs) && connectTimeoutMs > 0
+                ? connectTimeoutMs
+                : 15000
         const discoveryAttempts = Number(options.discoveryAttempts ?? 4)
         this.#discoveryAttempts =
             Number.isFinite(discoveryAttempts) && discoveryAttempts > 0
@@ -284,7 +304,30 @@ export class NativeNobleAiMeterClient extends EventTarget {
         this.#peripheralDisconnectHandler = () => this.#handleDisconnect()
         peripheral.on?.('disconnect', this.#peripheralDisconnectHandler)
 
-        await peripheral.connectAsync()
+        let connectTimeoutId = null
+        try {
+            await Promise.race([
+                peripheral.connectAsync(),
+                new Promise((_resolve, reject) => {
+                    connectTimeoutId = this.#timers.setTimeout(() => {
+                        reject(new BleConnectionTimeoutError(peripheral))
+                    }, this.#connectTimeoutMs)
+                })
+            ])
+        } catch (error) {
+            this.#clearHandles()
+            if (
+                error?.code === 'BLE_CONNECTION_TIMEOUT' &&
+                typeof peripheral?.disconnectAsync === 'function'
+            ) {
+                await peripheral.disconnectAsync().catch(() => {})
+            }
+            throw error
+        } finally {
+            if (connectTimeoutId !== null) {
+                this.#timers.clearTimeout(connectTimeoutId)
+            }
+        }
         const handles = await this.#discoverAiMeterHandles(peripheral)
 
         this.#rx = handles.rx

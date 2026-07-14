@@ -102,6 +102,31 @@ test('IpcBleClient re-emits native BLE events', () => {
     assert.deepEqual(events, [{ raw: 'ack' }, { disconnected: true }])
 })
 
+test('IpcBleClient restores typed native connection errors', async () => {
+    const bridge = new FakeBridge({
+        rememberedDevice: {
+            operationError: {
+                code: 'BLE_CONNECTION_TIMEOUT',
+                message: 'Neon Meter BLE connection timed out',
+                deviceId: 'stale-meter',
+                deviceName: 'Neon Meter'
+            }
+        }
+    })
+    const client = new IpcBleClient({ bridge })
+
+    await assert.rejects(
+        () => client.connectRemembered({ id: 'stale-meter' }),
+        (error) => {
+            assert.equal(error.code, 'BLE_CONNECTION_TIMEOUT')
+            assert.equal(error.message, 'Neon Meter BLE connection timed out')
+            assert.equal(error.deviceId, 'stale-meter')
+            assert.equal(error.deviceName, 'Neon Meter')
+            return true
+        }
+    )
+})
+
 class FakeBridge {
     calls = []
     listener = null
@@ -131,6 +156,9 @@ class FakeBridge {
 
     async bleConnectRemembered(device) {
         this.calls.push(['connectRemembered', device])
+        if (this.options.rememberedDevice) {
+            return this.options.rememberedDevice
+        }
         return {
             id: device.id || 'device-1',
             name: 'Neon Meter',

@@ -84,6 +84,39 @@ test('registerNativeBleIpc forwards native BLE events to renderer windows', () =
     assert.deepEqual(second.messages, first.messages)
 })
 
+test('registerNativeBleIpc preserves typed connection errors in an IPC envelope', async () => {
+    const ipcMain = new FakeIpcMain()
+    const bleClient = new FakeBleClient()
+    bleClient.connectRemembered = async () => {
+        const error = new Error('Neon Meter BLE connection timed out')
+        error.code = 'BLE_CONNECTION_TIMEOUT'
+        error.deviceId = 'stale-meter'
+        error.deviceName = 'Neon Meter'
+        throw error
+    }
+
+    registerNativeBleIpc({
+        ipcMain,
+        bleClient,
+        getWebContents: () => []
+    })
+
+    assert.deepEqual(
+        await ipcMain.handlers.get('ble:connect-remembered')(
+            {},
+            { id: 'stale-meter' }
+        ),
+        {
+            operationError: {
+                code: 'BLE_CONNECTION_TIMEOUT',
+                message: 'Neon Meter BLE connection timed out',
+                deviceId: 'stale-meter',
+                deviceName: 'Neon Meter'
+            }
+        }
+    )
+})
+
 class FakeIpcMain {
     handlers = new Map()
     listeners = new Map()
