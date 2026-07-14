@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.0.9 - 2026-07-14
+
+### Added
+
+- Added automatic stale BLE pairing recovery after repeated connection
+  timeouts, using the meter's USB repair command when USB is available.
+- Added a bundled, pinned ESP Web Tools updater that installs all required
+  firmware images without erasing pairing and settings data.
+- Added a separately confirmed factory-install path for users who explicitly
+  need to erase the meter.
+
+### Fixed
+
+- Bounded native BLE connection attempts so failed connections time out,
+  release their pending peripheral, and can recover cleanly.
+- Added actionable recovery guidance and a shortcut to macOS Bluetooth
+  Settings when automatic USB repair is unavailable.
+- Kept firmware manifests, multi-image offsets, and installation behavior
+  synchronized with Neon Meter firmware 1.0.7.
+
+### Validation
+
+- `npm test`
+- `npm run check:format`
+- `npm run dist:dir`
+- Verified the packaged ASAR contains the generated ESP Web Tools bundle.
+- A physical CoreS3 was not connected for this release, so on-device recovery
+  validation remains outstanding.
+
 ## 1.0.8 - 2026-07-14
 
 ### Fixed
