@@ -13,12 +13,13 @@
     "type": "module",
     "main": "src/electron/main.mjs",
     "scripts": {
-        "start": "node scripts/start-neon-meter.mjs",
+        "start": "npm run build:firmware-installer && node scripts/start-neon-meter.mjs",
         "dev": "node scripts/start-neon-meter.mjs",
-        "serve": "node src/server.mjs",
+        "serve": "npm run build:firmware-installer && node src/server.mjs",
         "assets:icons": "node scripts/generate-neon-meter-icons.mjs",
-        "dist": "electron-builder --publish=never",
-        "dist:dir": "electron-builder --dir --publish=never",
+        "build:firmware-installer": "rollup --config rollup.config.mjs",
+        "dist": "npm run build:firmware-installer && electron-builder --publish=never",
+        "dist:dir": "npm run build:firmware-installer && electron-builder --dir --publish=never",
         "test": "node scripts/run-tests.mjs",
         "format": "prettier --write .",
         "check:format": "prettier --check ."
@@ -29,9 +30,15 @@
         "serialport": "^13.0.0"
     },
     "devDependencies": {
+        "@rollup/plugin-commonjs": "29.0.3",
+        "@rollup/plugin-json": "6.1.0",
+        "@rollup/plugin-node-resolve": "16.0.3",
+        "@rollup/plugin-terser": "1.0.0",
         "electron": "^39.2.6",
         "electron-builder": "^26.8.1",
-        "prettier": "^3.4.2"
+        "esp-web-tools": "10.3.0",
+        "prettier": "^3.4.2",
+        "rollup": "4.62.2"
     },
     "engines": {
         "node": ">=20"

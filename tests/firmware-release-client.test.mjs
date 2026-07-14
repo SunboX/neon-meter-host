@@ -6,34 +6,99 @@ import {
     normalizeFirmwareManifest
 } from '../src/firmware/FirmwareReleaseClient.mjs'
 
-test('normalizeFirmwareManifest extracts version and absolute image URL', () => {
+test('normalizeFirmwareManifest retains every safe part and factory image', () => {
     const release = normalizeFirmwareManifest(
         {
             name: 'Neon Meter',
-            version: '1.0.1',
+            version: '1.0.7',
             builds: [
                 {
                     chipFamily: 'ESP32-S3',
                     parts: [
                         {
-                            path: 'firmware/neon-meter.factory.bin',
+                            path: 'firmware/bootloader.bin',
                             offset: 0
+                        },
+                        {
+                            path: 'firmware/partitions.bin',
+                            offset: 32768
+                        },
+                        {
+                            path: 'firmware/boot_app0.bin',
+                            offset: 57344
+                        },
+                        {
+                            path: 'firmware/firmware.bin',
+                            offset: 65536
                         }
                     ]
                 }
-            ]
+            ],
+            factory: {
+                path: 'firmware/neon-meter.factory.bin',
+                offset: 0
+            }
         },
         'https://sunbox.github.io/neon-meter/manifest.json'
     )
 
     assert.deepEqual(release, {
         name: 'Neon Meter',
-        version: '1.0.1',
+        version: '1.0.7',
         manifestUrl: 'https://sunbox.github.io/neon-meter/manifest.json',
         chipFamily: 'ESP32-S3',
-        imageUrl:
+        parts: [
+            {
+                path: 'https://sunbox.github.io/neon-meter/firmware/bootloader.bin',
+                offset: 0
+            },
+            {
+                path: 'https://sunbox.github.io/neon-meter/firmware/partitions.bin',
+                offset: 32768
+            },
+            {
+                path: 'https://sunbox.github.io/neon-meter/firmware/boot_app0.bin',
+                offset: 57344
+            },
+            {
+                path: 'https://sunbox.github.io/neon-meter/firmware/firmware.bin',
+                offset: 65536
+            }
+        ],
+        imageUrl: 'https://sunbox.github.io/neon-meter/firmware/firmware.bin',
+        factoryImageUrl:
             'https://sunbox.github.io/neon-meter/firmware/neon-meter.factory.bin'
     })
+})
+
+test('normalizeFirmwareManifest rejects unsafe split-image offsets', () => {
+    for (const [label, parts] of [
+        ['missing', [{ path: 'firmware.bin' }]],
+        [
+            'duplicate',
+            [
+                { path: 'bootloader.bin', offset: 0 },
+                { path: 'firmware.bin', offset: 0 }
+            ]
+        ],
+        ['fractional', [{ path: 'firmware.bin', offset: 65536.5 }]],
+        ['negative', [{ path: 'firmware.bin', offset: -1 }]],
+        ['NVS overlap', [{ path: 'firmware.bin', offset: 36864 }]]
+    ]) {
+        assert.throws(
+            () =>
+                normalizeFirmwareManifest(
+                    {
+                        version: '1.0.7',
+                        builds: [{ chipFamily: 'ESP32-S3', parts }],
+                        factory: { path: 'factory.bin', offset: 0 }
+                    },
+                    'https://example.test/manifest.json'
+                ),
+            /offset/i,
+            label
+        )
+    }
 })
 
 test('compareSemver compares release versions without v prefixes', () => {
@@ -59,9 +124,15 @@ test('fetchLatestFirmwareRelease reads manifest through injected fetch', async (
                         builds: [
                             {
                                 chipFamily: 'ESP32-S3',
-                                parts: [{ path: 'firmware/current.bin' }]
+                                parts: [
+                                    {
+                                        path: 'firmware/firmware.bin',
+                                        offset: 65536
+                                    }
+                                ]
                             }
-                        ]
+                        ],
+                        factory: { path: 'firmware/factory.bin', offset: 0 }
                     }
                 }
             }
@@ -71,5 +142,5 @@ test('fetchLatestFirmwareRelease reads manifest through injected fetch', async (
     assert.deepEqual(calls, ['https://example.test/manifest.json'])
     assert.equal(release.version, '1.0.2')
     assert.equal(release.chipFamily, 'ESP32-S3')
-    assert.equal(release.imageUrl, 'https://example.test/firmware/current.bin')
+    assert.equal(release.imageUrl, 'https://example.test/firmware/firmware.bin')
 })

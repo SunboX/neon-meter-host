@@ -9,4 +9,5 @@ dist
 output/playwright
 .electron-runtime
 .icon-build
+/src/generated/*.bundle.mjs
 /.worktrees
