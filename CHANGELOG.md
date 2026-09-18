@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.10 - 2026-09-18
+
+### Added
+
+- Added automatic ChatGPT/Codex Luna Reserve detection and compact payload
+  mapping for the Neon Meter CoreS3.
+
+### Changed
+
+- Updated the host release to 1.0.10 and synchronized its firmware installer
+  metadata with Neon Meter firmware 1.0.8.
+
+### Validation
+
+- `npm test`
+- `npm run check:format`
+- `npm run dist:dir`
+- Verified the connected CoreS3 acknowledged the locally installed firmware.
+
 ## 1.0.9 - 2026-07-14
 
 ### Added

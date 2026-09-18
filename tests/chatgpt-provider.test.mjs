@@ -73,6 +73,87 @@ test('parseChatGptUsagePayload keeps integer percent fields as percentages', () 
     assert.equal(payload.detail, '5h 6% / 7d 1%')
 })
 
+test('parseChatGptUsagePayload maps active Luna Reserve usage', () => {
+    const payload = parseChatGptUsagePayload(
+        {
+            rate_limit: {
+                allowed: false,
+                limit_reached: true,
+                primary_window: {
+                    used_percent: 100,
+                    limit_window_seconds: 604800,
+                    reset_at: Date.parse('2026-09-20T12:00:00Z') / 1000
+                }
+            },
+            rate_limit_upsell: {
+                banner_type: 'luna_reserve'
+            },
+            additional_rate_limits: [
+                {
+                    limit_name: 'gpt-reserve',
+                    metered_feature: 'base_model_inference',
+                    normal_model_slug: 'gpt-5.6-luna',
+                    rate_limit: {
+                        allowed: true,
+                        limit_reached: false,
+                        primary_window: {
+                            used_percent: 24,
+                            limit_window_seconds: 604800,
+                            reset_at: Date.parse('2026-09-19T12:00:00Z') / 1000
+                        }
+                    }
+                }
+            ]
+        },
+        new Date('2026-09-18T12:00:00Z')
+    )
+
+    assert.equal(payload.p, 'chatgpt')
+    assert.equal(payload.title, 'Luna-Reserve')
+    assert.equal(payload.se, false)
+    assert.equal(payload.s, 0)
+    assert.equal(payload.sr, -1)
+    assert.equal(payload.w, 24)
+    assert.equal(payload.wl, 'Luna-Reserve')
+    assert.equal(payload.wr, 1440)
+    assert.equal(payload.detail, 'Luna-Reserve 76% remaining')
+    assert.equal(payload.ok, true)
+})
+
+test('parseChatGptUsagePayload keeps ordinary usage while Reserve is inactive', () => {
+    const payload = parseChatGptUsagePayload({
+        rate_limit: {
+            allowed: true,
+            primary_window: {
+                used_percent: 12,
+                limit_window_seconds: 18000,
+                reset_at: 1778853600
+            }
+        },
+        rate_limit_upsell: {
+            banner_type: 'luna_reserve'
+        },
+        additional_rate_limits: [
+            {
+                limit_name: 'gpt-reserve',
+                rate_limit: {
+                    allowed: true,
+                    primary_window: {
+                        used_percent: 24,
+                        limit_window_seconds: 604800,
+                        reset_at: 1779026400
+                    }
+                }
+            }
+        ]
+    })
+
+    assert.equal(payload.title, 'ChatGPT')
+    assert.equal(payload.se, true)
+    assert.equal(payload.s, 12)
+    assert.equal(payload.sl, 'Session')
+})
+
 test('parseChatGptUsagePayload keeps a lone seven-day primary window in Weekly', () => {
     const payload = parseChatGptUsagePayload(
         {

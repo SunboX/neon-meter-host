@@ -1,8 +1,9 @@
-import { buildFirmwarePayload } from '../core/FirmwarePayload.mjs'
+import { buildFirmwarePayload, clampPercent } from '../core/FirmwarePayload.mjs'
 
 const USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage'
 const SESSION_WINDOW_SECONDS = 5 * 60 * 60
 const WEEKLY_WINDOW_SECONDS = 7 * 24 * 60 * 60
+const LUNA_RESERVE_TITLE = 'Luna-Reserve'
 
 /**
  * Fetches ChatGPT/Codex quota metadata and maps it to the CoreS3 payload.
@@ -105,6 +106,9 @@ export function extractChatGptCredentials(raw) {
  * @returns {ReturnType<typeof buildFirmwarePayload>}
  */
 export function parseChatGptUsagePayload(raw, now = new Date()) {
+    const reserveWindow = findActiveLunaReserveWindow(raw)
+    if (reserveWindow) return lunaReservePayload(reserveWindow, now)
+
     const sessionWindow = findQuotaWindow(raw, 'session')
     const weeklyWindow = findQuotaWindow(raw, 'weekly')
     const sessionPercent = percentFromWindow(sessionWindow)
@@ -137,6 +141,69 @@ export function parseChatGptUsagePayload(raw, now = new Date()) {
         windowResetMinutes: resetMinutes(resetFromWindow(weeklyWindow), now),
         status: 'ok',
         detail,
+        ok: true
+    })
+}
+
+/**
+ * Finds the active gpt-reserve window when ordinary usage is exhausted.
+ * @param {unknown} raw
+ * @returns {Record<string, unknown> | null}
+ */
+function findActiveLunaReserveWindow(raw) {
+    const source = objectValue(raw)
+    const upsell = objectValue(source?.rate_limit_upsell)
+    const ordinary = objectValue(source?.rate_limit)
+    if (
+        upsell?.banner_type !== 'luna_reserve' ||
+        ordinary?.allowed !== false ||
+        !Array.isArray(source?.additional_rate_limits)
+    ) {
+        return null
+    }
+
+    for (const candidate of source.additional_rate_limits) {
+        const entry = objectValue(candidate)
+        const rateLimit = objectValue(entry?.rate_limit)
+        const limitName = String(entry?.limit_name || '').toLowerCase()
+        if (
+            limitName !== 'gpt-reserve' ||
+            rateLimit?.allowed !== true ||
+            rateLimit.limit_reached === true
+        ) {
+            continue
+        }
+
+        for (const key of ['primary_window', 'secondary_window']) {
+            const window = objectValue(rateLimit[key])
+            if (window && percentFromWindow(window) !== null) return window
+        }
+    }
+
+    return null
+}
+
+/**
+ * Maps an active Luna Reserve window to the firmware's single-window shape.
+ * @param {Record<string, unknown>} window
+ * @param {Date} now
+ * @returns {ReturnType<typeof buildFirmwarePayload>}
+ */
+function lunaReservePayload(window, now) {
+    const usedPercent = percentFromWindow(window) ?? 0
+    const remainingPercent = 100 - clampPercent(usedPercent)
+    return buildFirmwarePayload({
+        provider: 'chatgpt',
+        title: LUNA_RESERVE_TITLE,
+        sessionEnabled: false,
+        currentLabel: 'Session',
+        currentPercent: 0,
+        currentResetMinutes: -1,
+        windowLabel: LUNA_RESERVE_TITLE,
+        windowPercent: usedPercent,
+        windowResetMinutes: resetMinutes(resetFromWindow(window), now),
+        status: 'ok',
+        detail: LUNA_RESERVE_TITLE + ' ' + remainingPercent + '% remaining',
         ok: true
     })
 }
